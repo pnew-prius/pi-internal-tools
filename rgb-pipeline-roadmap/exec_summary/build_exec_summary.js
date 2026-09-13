@@ -71,7 +71,7 @@ function statRow() {
     columnWidths: [1, 1, 1, 1, 1].map(() => Math.floor(USABLE / 5)),
     rows: [new TableRow({ cantSplit: true, children: [
       statCallout("$64,100–153,300", "Total one-time investment", NAVY),
-      statCallout("~$5,520–6,720/mo", "Recurring run cost", TEAL),
+      statCallout("~$6,720–6,840/mo", "Recurring run cost", TEAL),
       statCallout("8–14 wks", "Fastest possible, fully parallel", AMBER),
       statCallout("3", "Pipeline legs — Collection, FBO, Cloud", MUTED),
       statCallout("Built", "Image conversion — core proven, tuning + orchestration remain", MUTED),
@@ -176,8 +176,8 @@ function costTable() {
   });
   const rows = [
     ["1 · Collection to FBO", "$46,000–106,400", "—"],
-    ["2 · FBO to Cloud", "$6,100–16,900", "$560–1,760/mo"],
-    ["3 · Cloud to Delivery", "$12,000–30,000", "~$4,960/mo*"],
+    ["2 · FBO to Cloud", "$6,100–16,900", "$1,460/mo"],
+    ["3 · Cloud to Delivery", "$12,000–30,000", "~$5,260–5,380/mo*"],
   ].map((r, i) => new TableRow({
     cantSplit: true,
     children: [
@@ -191,7 +191,7 @@ function costTable() {
     children: [
       cell("Total", { w: w[0], shade: AMBER, bold: true, size: 20 }),
       cell("$64,100–153,300", { w: w[1], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
-      cell("~$5,520–6,720/mo*", { w: w[2], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
+      cell("~$6,720–6,840/mo*", { w: w[2], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
     ],
   });
   return new Table({ width: { size: USABLE, type: WidthType.DXA }, columnWidths: w, rows: [head, ...rows, total] });
@@ -259,7 +259,7 @@ const doc = new Document({
       h2("Key Notes", NAVY),
       bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — refine before committing budget."),
       bullet("Before the timeline in Section 6 starts, hardware needs to be ordered — no committed lead time yet."),
-      bullet("The ~$5,520–6,720/month recurring figure reflects the 1-sortie/day planning basis; real 2025 usage implies materially higher volume, so this number should be revisited once that gap is resolved (Section 7)."),
+      bullet("The ~$6,720–6,840/month recurring figure reflects the 1-sortie/day planning basis; real 2025 usage implies materially higher volume, so this number should be revisited once that gap is resolved (Section 7)."),
 
       new Paragraph({ spacing: { before: 260 }, children: [] }),
 
@@ -301,7 +301,7 @@ const doc = new Document({
       h1("6", "Cost & Timeline"),
       body("Figures are planning estimates by pipeline leg. See Appendix A for the underlying equipment and service breakdown."),
       costTable(),
-      note("*Cloud to Delivery recurring cost excludes image conversion, which is not yet in production and has no measured production rate; otherwise reflects current metered rates for a shared-tenant workload; see Appendix A.4."),
+      note("*Cloud to Delivery recurring cost now includes a derived estimate for image conversion (~$300–420/mo, see Appendix A.3) alongside current metered rates for a shared-tenant workload; see Appendix A.4."),
       h2("Indicative timeline (parallel workstreams)", NAVY),
       bullet("Collection to FBO — 8–14 weeks (largest engineering scope; bounds the overall timeline)"),
       bullet("FBO to Cloud — 1–2 weeks"),
@@ -336,14 +336,14 @@ const doc = new Document({
         ["10 TB local drive", "Buffer storage; holds data if the internet link is down", "1 / office", "$300–600"],
         ["10-gigabit network switch", "Network hardware linking docking stations and workstation", "1 / office", "$300–800"],
         ["Data Box Gateway", "Free software that uploads to the cloud and auto-retries on failure", "1 / office", "$0"],
-        ["Internet circuit (1 Gbps)", "Carries the upload to the cloud", "1 / office", "$300–1,500/mo"],
+        ["Internet circuit (1 Gbps)", "Carries the upload to the cloud", "1 / office", "$1,200/mo"],
         ["Cloud staging storage", "Holds raw images in the cloud while they wait to be processed", "usage-based", "~$260/mo"],
         ["Gateway setup & ingest automation", "Configures Data Box Gateway, upload verification, monitoring/alerting", "1 (one-time)", "$4,000–12,000"],
       ]),
 
       h2("A.3  Cloud to Delivery", TEAL),
       equipmentTable([
-        ["Image conversion", "Converts raw camera files into working images. Real codebase (private GitHub repo); core conversion, geometric correction, and ICC embedding proven on production imagery. Native SDK sharpening and a clarity feature remain to be built/tuned", "usage-based", "Not yet measured (pre-production)"],
+        ["Image conversion", "Converts raw camera files into working images. Real codebase (private GitHub repo); core conversion, geometric correction, and ICC embedding proven on production imagery. Native SDK sharpening and a clarity feature remain to be built/tuned. Cost derived from measured processing time (25–35 s/image) on the same VM class as the rest of the pipeline — not yet a live production bill", "usage-based", "~$300–420/mo (derived)"],
         ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (one-time)", "$12,000–30,000"],
         ["Orthomosaic software license", "Stitches converted images into a seamless map; usage-based, no cap on capacity", "1 / org", "$1,597/mo base + $0.05/processing-hr"],
         ["Orthomosaic & file-finishing compute", "Cloud virtual machines that run the stitching and finishing steps; scale to zero when idle", "usage-based", "~$575/mo"],
@@ -358,6 +358,7 @@ const doc = new Document({
       bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
       bullet("Development figures are rough engineering estimates pending real scoping"),
       bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
+      bullet("Image conversion's ~$300–420/mo is derived (measured 25–35 s/image × the same VM rate used elsewhere in this pipeline × ~634,000 images/year), not a live production bill. Converting one sortie (~3,171 images) serially takes ~22–31 hours on a single instance — production needs roughly 11–16 parallel instances to clear a sortie in ~2 hours (cost is essentially unchanged by how many instances share the work; parallelism buys turnaround time, not savings)"),
     ],
   }],
 });
