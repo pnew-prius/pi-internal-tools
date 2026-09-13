@@ -70,11 +70,11 @@ function statRow() {
     width: { size: USABLE, type: WidthType.DXA },
     columnWidths: [1, 1, 1, 1, 1].map(() => Math.floor(USABLE / 5)),
     rows: [new TableRow({ cantSplit: true, children: [
-      statCallout("$72,100–173,300", "Total one-time investment", NAVY),
+      statCallout("$64,100–153,300", "Total one-time investment", NAVY),
       statCallout("~$5,520–6,720/mo", "Recurring run cost", TEAL),
       statCallout("8–14 wks", "Fastest possible, fully parallel", AMBER),
       statCallout("3", "Pipeline legs — Collection, FBO, Cloud", MUTED),
-      statCallout("Built", "Image conversion — exists, not yet in production", MUTED),
+      statCallout("Built", "Image conversion — core proven, tuning + orchestration remain", MUTED),
     ]})],
   });
 }
@@ -177,7 +177,7 @@ function costTable() {
   const rows = [
     ["1 · Collection to FBO", "$46,000–106,400", "—"],
     ["2 · FBO to Cloud", "$6,100–16,900", "$560–1,760/mo"],
-    ["3 · Cloud to Delivery", "$20,000–50,000", "~$4,960/mo*"],
+    ["3 · Cloud to Delivery", "$12,000–30,000", "~$4,960/mo*"],
   ].map((r, i) => new TableRow({
     cantSplit: true,
     children: [
@@ -190,7 +190,7 @@ function costTable() {
     cantSplit: true,
     children: [
       cell("Total", { w: w[0], shade: AMBER, bold: true, size: 20 }),
-      cell("$72,100–173,300", { w: w[1], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
+      cell("$64,100–153,300", { w: w[1], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
       cell("~$5,520–6,720/mo*", { w: w[2], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
     ],
   });
@@ -210,7 +210,7 @@ function resourceTable() {
   const rows = [
     ["Embedded Software Engineer", "Onboard capture integration and in-flight quality-check software"],
     ["Cloud / DevOps Engineer", "Upload automation, ingest verification, and monitoring"],
-    ["Systems Integration Engineer", "Productionizes and wires the existing image-conversion pipeline into the cloud"],
+    ["Systems Integration Engineer", "Validates SDK sharpening, adds the still-missing clarity feature, and wires the existing conversion pipeline into the cloud"],
     ["Avionics Installation Technician", "Mounts and wires onboard equipment, per aircraft"],
   ].map((r, i) => new TableRow({
     cantSplit: true,
@@ -291,7 +291,7 @@ const doc = new Document({
       h2("FBO to Cloud", TEAL),
       bullet("No automated, self-healing upload pipeline from the office into the cloud"),
       h2("Cloud to Delivery", TEAL),
-      bullet("Image-conversion pipeline exists in Azure but is not yet in production"),
+      bullet("Image-conversion pipeline (real GitHub repo) has core conversion, geometric correction, and ICC embedding proven on production imagery; SDK-native sharpening and a clarity feature are not yet built or tuned"),
       bullet("No automated pipeline wiring the landing point through conversion into the existing stitching and finishing steps"),
 
       h1("5", "Resources"),
@@ -343,8 +343,8 @@ const doc = new Document({
 
       h2("A.3  Cloud to Delivery", TEAL),
       equipmentTable([
-        ["Image conversion", "Converts raw camera files into working images — pipeline exists in Azure, not yet in production", "usage-based", "Not yet measured (pre-production)"],
-        ["Cloud pipeline integration", "Hardens the existing conversion pipeline for production and wires it into mosaic → GDAL → publish end to end", "1 (one-time)", "$20,000–50,000"],
+        ["Image conversion", "Converts raw camera files into working images. Real codebase (private GitHub repo); core conversion, geometric correction, and ICC embedding proven on production imagery. Native SDK sharpening and a clarity feature remain to be built/tuned", "usage-based", "Not yet measured (pre-production)"],
+        ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (one-time)", "$12,000–30,000"],
         ["Orthomosaic software license", "Stitches converted images into a seamless map; usage-based, no cap on capacity", "1 / org", "$1,597/mo base + $0.05/processing-hr"],
         ["Orthomosaic & file-finishing compute", "Cloud virtual machines that run the stitching and finishing steps; scale to zero when idle", "usage-based", "~$575/mo"],
         ["Image server", "Publishes finished imagery so it can be viewed and delivered", "1", "~$896/mo"],
@@ -357,6 +357,7 @@ const doc = new Document({
       bullet("Delivery storage is a shared-account rate, not isolated to this pipeline"),
       bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
       bullet("Development figures are rough engineering estimates pending real scoping"),
+      bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
     ],
   }],
 });
