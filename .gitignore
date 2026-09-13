@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+.wrangler/
+*.docx
+*.xlsx
+*.pptx
+*.pdf
+render_v*/
+page-*.jpg
+*.bak_*
