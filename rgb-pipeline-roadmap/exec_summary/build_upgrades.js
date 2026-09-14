@@ -11,7 +11,7 @@ const children = [
     "Architecture, Capabilities & Equipment",
     "13 September 2026",
     "Scope",
-    "Aircraft capture through cloud publishing — three legs: Collection to FBO, FBO to Cloud, Cloud to Delivery"
+    "Aircraft capture through cloud publishing — three legs: Collection to FBO, FBO to Cloud, Cloud to Delivery — costs split by aircraft and FBO"
   ),
 
   statRow([
@@ -88,7 +88,22 @@ const children = [
   note("*Ongoing cost here is equipment and cloud operating cost only — internet circuit, cloud storage, image processing, hosting. It does not include flight operations (crew, fuel, aircraft time); that cost is tracked separately in the companion Quarterly Permian Collection — Costs & Timelines document."),
   note("Collection to FBO isn't one number — it's an aircraft cost plus a ground-station cost, and one ground station can support several aircraft. FBO to Cloud is a ground-station cost too. Cloud to Delivery is a single cloud-side cost that doesn't repeat no matter how many aircraft or ground stations you add. Full technical detail and itemized pricing are in Appendix A."),
 
-  h1("7", "Risks"),
+  h1("7", "Cost of Additional Aircraft"),
+  body("Adding an aircraft to an existing fleet, based at an FBO that already supports one, costs only the per-aircraft hardware below — the FBO and fleet-wide software costs are already covered."),
+  compareTable(
+    ["Item", "Cost"],
+    [
+      ["Onboard edge computer", "$2,000–4,000"],
+      ["Camera-to-computer cabling", "$200–500"],
+      ["Removable NVMe drives", "$1,600–3,200"],
+      ["Aircraft installation", "$2,000–8,000"],
+      ["Total per additional aircraft", "$5,800–15,700"],
+    ],
+    [4680, 4680]
+  ),
+  note("A new FBO to base the aircraft at instead adds $200–700 more, one-time. See Appendix A.1 for the full itemized breakdown."),
+
+  h1("8", "Risks"),
   bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — actual costs may differ."),
   bullet("Onboard capture & coverage-check software development is the largest cost item and has no reference codebase to build from, unlike image conversion and GeoServer automation."),
   bullet("Aircraft installation cost has the widest range of any line item — it depends on airframe type and existing equipment-bay access, which vary by aircraft."),
@@ -137,7 +152,7 @@ const children = [
   note("Subtotal per FBO: $6,100–16,900 one-time. The internet circuit and cloud staging storage this gateway runs on are recurring operating costs — itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
 
   h2("A.3  Cloud to Delivery", TEAL),
-  body("Fleet-wide — built once in the cloud, regardless of aircraft or FBO count. Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The build costs on this leg are the integration and automation work to wire the pieces together:"),
+  body("Fleet-wide — built once in the cloud, regardless of aircraft or FBO count. Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live. The build costs on this leg are the integration and automation work to wire the pieces together:"),
   equipmentTable([
     ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline (Phase One Image SDK, C++) into mosaic → GDAL → publish end to end", "1 (fleet-wide, one-time)", "$12,000–30,000"],
     ["EO postprocessing — VM setup", "Stands up an Azure Windows Server VM and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation via POSPacBatch.exe, assuming the license relocates seamlessly", "1 (fleet-wide, one-time)", "$2,000–5,000"],
