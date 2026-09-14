@@ -7,6 +7,7 @@ const { Paragraph } = require("docx");
 
 const children = [
   ...docTitle(
+    "RGB Imagery Pipeline — Cloud Migration",
     "Upgrade Plan — Architecture, Capabilities & Equipment",
     "13 September 2026",
     "Scope",
@@ -21,7 +22,7 @@ const children = [
   ]),
 
   h2("Key Notes", NAVY),
-  bullet("This document covers what's being built and why, leg by leg, plus the itemized equipment and services behind each leg's cost. Resourcing, the rolled-up cost table, schedule, and process/collection-time comparisons live in the companion Cost & Timeline document."),
+  bullet("This document covers what's being built and why, leg by leg, plus the itemized one-time equipment and build costs behind each leg. Recurring operating costs, flight-collection costs, and processing turnaround — all steady-state, post-upgrade figures — live in the companion Quarterly Permian Collection — Costs & Timelines document."),
   bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — refine before committing budget."),
   bullet("All figures are scoped to this project's AOI (collected and delivered quarterly), not total company volume."),
 
@@ -60,7 +61,7 @@ const children = [
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Technical Addendum"),
-  body("Equipment and services underlying the upgrade, by pipeline leg. Rolled-up totals and the schedule that follows from this scope are in the companion Cost & Timeline document."),
+  body("One-time equipment, installation, and build costs underlying the upgrade, by pipeline leg — what it takes to reach finished state. Recurring operating costs, once the upgrade is live and running, are itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
 
   h2("A.1  Collection to FBO", TEAL),
   body("This document assumes 1 aircraft and 1 FBO. Split below by what actually scales with what — an additional aircraft at the same FBO repeats only the per-aircraft rows; an additional FBO (serving any number of aircraft) repeats only the per-FBO rows; the software rows are built once, fleet-wide, and never repeat."),
@@ -93,30 +94,20 @@ const children = [
     ["10 TB local drive", "Buffer storage; holds data if the internet link is down", "1 / office", "$300–600"],
     ["10-gigabit network switch", "Network hardware linking docking stations and workstation", "1 / office", "$300–800"],
     ["Data Box Gateway", "Free software that uploads to the cloud and auto-retries on failure", "1 / office", "$0"],
-    ["Internet circuit (1 Gbps)", "Carries the upload to the cloud", "1 / office", "$1,200/mo"],
-    ["Cloud staging storage", "Holds raw images in the cloud while they wait to be processed", "usage-based", "~$260/mo"],
     ["Gateway setup & ingest automation", "Configures Data Box Gateway, upload verification, monitoring/alerting", "1 (one-time)", "$4,000–12,000"],
   ]),
+  note("The internet circuit and cloud staging storage this gateway runs on are recurring operating costs — itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
 
   h2("A.3  Cloud to Delivery", TEAL),
+  body("Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The one build cost on this leg is the integration work to wire the pieces together:"),
   equipmentTable([
-    ["Image conversion — 150 MP", "Converts raw camera files into working images. Real codebase (private GitHub repo); core conversion, geometric correction, and ICC embedding proven on production imagery. Native SDK sharpening and a clarity feature remain to be built/tuned. Cost derived from measured processing time (25–35 s/image) × this project's real total (215,000 images) — not yet a live production bill", "215,000 img / project", "$1,226–1,699 / project (~$409–566/mo)"],
-    ["Image conversion — 250 MP", "Same conversion step on the higher-resolution camera. Per-image time extrapolated (not measured) from the 150→250 MP pixel ratio (1.63×); this project's real total is 37% fewer images, but total pixel volume is within ~2.5% of the 150 MP case, so cost comes out nearly identical", "135,000 img / project", "$1,254–1,744 / project (~$418–581/mo)"],
     ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (one-time)", "$12,000–30,000"],
-    ["Orthomosaic software license", "Stitches converted images into a seamless map; usage-based, no cap on capacity", "1 / org", "$1,597/mo base + $0.05/processing-hr"],
-    ["Orthomosaic & file-finishing compute", "Cloud virtual machines that run the stitching and finishing steps; scale to zero when idle", "usage-based", "~$575/mo"],
-    ["Image server", "Publishes finished imagery so it can be viewed and delivered", "1", "~$896/mo"],
-    ["Web security gateway", "Protects and fronts the image server", "1", "~$437/mo"],
-    ["Delivery storage & content delivery", "Stores and serves finished imagery to customers", "shared account", "~$1,457/mo"],
   ]),
 
   h2("A.4  Notes on Figures", TEAL),
-  bullet("Image-server, gateway, and compute figures are the cloud provider's current metered rates for this workload"),
-  bullet("Delivery storage is a shared-account rate, not isolated to this pipeline"),
   bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
   bullet("Development figures are rough engineering estimates pending real scoping"),
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
-  bullet("Image conversion's cost is derived (measured 25–35 s/image × the same VM rate used elsewhere in this pipeline × this project's real image totals — 215,000 for 150 MP, 135,000 for 250 MP), not a live production bill. See the companion Cost & Timeline document's process-time and volume comparisons for the full 150 MP vs. 250 MP breakdown. Converting one sortie (~3,171 images, 150 MP) serially takes ~22–31 hours on a single instance — production needs roughly 11–16 parallel instances to clear a sortie in ~2 hours (cost is essentially unchanged by how many instances share the work; parallelism buys turnaround time, not savings)"),
 ];
 
 writeDoc(buildDocument("RGB Imagery Pipeline — Cloud Migration · Upgrade Plan", children), "RGB_Pipeline_Upgrade_Plan.docx");

@@ -21,7 +21,7 @@ const MARGIN = 1440; // 1 in
 const USABLE = PAGE_W - MARGIN * 2; // 9360
 
 // ---------- helpers ----------
-function docTitle(subtitle, preparedDate, scopeLabel, scopeText) {
+function docTitle(mainTitle, subtitle, preparedDate, scopeLabel, scopeText) {
   return [
     new Paragraph({
       spacing: { before: 200, after: 40 },
@@ -29,7 +29,7 @@ function docTitle(subtitle, preparedDate, scopeLabel, scopeText) {
     }),
     new Paragraph({
       spacing: { after: 60 },
-      children: [new TextRun({ text: "RGB Imagery Pipeline — Cloud Migration", bold: true, color: NAVY, size: 44, font: FONT })],
+      children: [new TextRun({ text: mainTitle, bold: true, color: NAVY, size: 44, font: FONT })],
     }),
     new Paragraph({
       spacing: { after: 260 },
