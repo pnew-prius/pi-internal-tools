@@ -22,6 +22,7 @@ const children = [
 
   h2("Key Notes", NAVY),
   bullet("Collection to FBO is the largest engineering scope and bounds the overall timeline, at 8–14 weeks running fully parallel with no resourcing constraints."),
+  bullet("The 8–14 week timeline starts once the roles in Section 5 are onboarded — it does not include time to hire or contract them."),
   bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
   bullet("Image conversion already works for the basics, proven on real project imagery."),
   bullet("Customer delivery is handled separately, via the Mercator platform's Data Portal."),
