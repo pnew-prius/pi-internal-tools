@@ -21,6 +21,13 @@ const children = [
     { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
 
+  h2("Key Notes", NAVY),
+  bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
+  bullet("Image conversion already works for the basics, proven on real project imagery."),
+  bullet("Customer delivery is handled separately, via the Mercator platform's Data Portal."),
+
+  new Paragraph({ spacing: { before: 260 }, children: [] }),
+
   h1("1", "Work To Be Done — Scope"),
   body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs:"),
   bullet("Collection to FBO — verified capture, in-flight quality checks, and physical transport of raw imagery from the aircraft to the office", { bold: true }),
