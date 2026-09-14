@@ -21,7 +21,7 @@ const children = [
   ]),
 
   h2("Key Notes", NAVY),
-  bullet("This document does not include sensor (camera) or office lease costs — only the supporting equipment and services around them."),
+  bullet("This document does not include sensor (camera), aircraft purchase, or office lease costs — only the supporting equipment and services around them."),
   bullet("Collection to FBO is the largest engineering scope and bounds the overall timeline, at 8–14 weeks running fully parallel with no resourcing constraints."),
   bullet("The 8–14 week timeline starts once the roles in Section 5 are onboarded — it does not include time to hire or contract them."),
   bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
@@ -106,6 +106,7 @@ const children = [
     [4680, 4680]
   ),
   note("No recurring cost added — all equipment and cloud costs are one-time or already covered per FBO and fleet-wide."),
+  note("This is equipment only — the aircraft itself (purchase or lease) is not included."),
   note("A new FBO to base the aircraft at instead costs more — see Section 8, Cost of Additional FBO."),
 
   h1("8", "Cost of Additional FBO"),
