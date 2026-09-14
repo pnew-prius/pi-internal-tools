@@ -179,7 +179,7 @@ function costTable() {
     ],
   });
   const rows = [
-    ["1 · Collection to FBO", "$46,000–106,400", "—"],
+    ["1 · Collection to FBO", "$31,000–72,400", "—"],
     ["2 · FBO to Cloud", "$6,100–16,900", "$1,460/mo"],
     ["3 · Cloud to Delivery", "$36,000–90,000", "~$5,370–5,530/mo*"],
   ].map((r, i) => new TableRow({
@@ -194,7 +194,7 @@ function costTable() {
     cantSplit: true,
     children: [
       cell("Total", { w: w[0], shade: AMBER, bold: true, size: 20 }),
-      cell("$88,100–213,300", { w: w[1], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
+      cell("$73,100–179,300", { w: w[1], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
       cell("~$6,830–6,990/mo*", { w: w[2], shade: AMBER, bold: true, size: 20, align: AlignmentType.RIGHT }),
     ],
   });

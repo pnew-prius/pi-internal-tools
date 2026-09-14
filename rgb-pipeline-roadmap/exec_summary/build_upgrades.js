@@ -16,7 +16,7 @@ const children = [
 
   statRow([
     { number: "8–14 wks", label: "Fastest possible, fully parallel", color: NAVY },
-    { number: "$88,100–213,300", label: "Capital cost to build", color: AMBER },
+    { number: "$73,100–179,300", label: "Capital cost to build", color: AMBER },
     { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
 
@@ -30,12 +30,12 @@ const children = [
 
   h1("1", "Work To Be Done — Scope"),
   body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs:"),
-  bullet("Collection to FBO — verified capture, in-flight quality checks, and physical transport of raw imagery from the aircraft to the office", { bold: true }),
+  bullet("Collection to FBO — verified capture, in-flight coverage checks, and physical transport of raw imagery from the aircraft to the office", { bold: true }),
   bullet("FBO to Cloud — reliable, automated upload of raw imagery from the office into cloud storage", { bold: true }),
   bullet("Cloud to Delivery — turning raw imagery into finished, ready-to-view maps and publishing them online automatically, entirely on cloud infrastructure", { bold: true }),
 
   h1("2", "Finished State Capabilities"),
-  bullet("Photo quality is checked in flight — a bad flight line is caught and re-flown the same sortie"),
+  bullet("Flight coverage is checked in flight — a missed line is caught and re-flown the same sortie"),
   bullet("Every image is checksummed at capture and verified at each handoff — a complete chain of custody from aircraft to cloud"),
   bullet("Aircraft turn around in minutes using swappable drive modules — no waiting on a copy"),
   bullet("Raw imagery uploads from the office to the cloud automatically, recovering on its own from any interruption"),
@@ -46,7 +46,7 @@ const children = [
   h1("3", "Current State Capabilities"),
   bullet("Orthomosaic stitching and file finishing already run on cloud compute — operating today"),
   bullet("The imagery server already publishes finished imagery — operating today"),
-  bullet("Image capture handling, in-flight quality checking, drive management, converting raw camera files into working images, correcting flight-position data, and bundling files for the next step remain manual, on-premise steps on office workstations", { color: RUST }),
+  bullet("Image capture handling, in-flight coverage checking, drive management, converting raw camera files into working images, correcting flight-position data, and bundling files for the next step remain manual, on-premise steps on office workstations", { color: RUST }),
   bullet("Publishing a new project's imagery online is manual today — someone has to set it up by hand", { color: RUST }),
   bullet("Customer delivery is not in place — getting finished imagery to customers is a manual process today, not an automated handoff", { color: RUST }),
   note("Customer-facing, self-service delivery is being built separately as the Data Portal track of the Mercator platform."),
@@ -54,7 +54,7 @@ const children = [
   h1("4", "Gaps"),
   body("Correlated to the three legs in Section 1:"),
   h2("Collection to FBO", TEAL),
-  bullet("No onboard quality-check device"),
+  bullet("No onboard coverage-check device"),
   bullet("No verified, swappable-drive capture system"),
   h2("FBO to Cloud", TEAL),
   bullet("No automated, self-healing upload pipeline from the office into the cloud"),
@@ -71,7 +71,7 @@ const children = [
   compareTable(
     ["Role", "Responsible for"],
     [
-      ["Embedded Software Engineer", "Builds the onboard camera and quality-check software"],
+      ["Embedded Software Engineer", "Builds the onboard camera and coverage-check software"],
       ["Cloud / DevOps Engineer", "Automates the cloud upload, sets up cloud servers, and monitors everything"],
       ["Systems Integration Engineer", "Finishes the image-processing software and connects every automated step into one pipeline"],
       ["Avionics Installation Technician", "Installs and wires the onboard equipment on each aircraft"],
@@ -96,7 +96,7 @@ const children = [
 
   h3sub("Per aircraft — repeats for each additional plane"),
   equipmentTable([
-    ["Onboard edge computer", "Ruggedized computer on the aircraft; checks each photo for quality — blur, exposure, coverage gaps — as it's taken; saves photos to a drive with a checksum (e.g., a fanless industrial PC, x86 or ARM, running Linux)", "1 / aircraft", "$2,000–4,000"],
+    ["Onboard edge computer", "Ruggedized computer on the aircraft; checks flight coverage against the plan as photos are taken; saves photos to a drive with a checksum (e.g., a fanless industrial PC, x86 or ARM, running Linux)", "1 / aircraft", "$2,000–4,000"],
     ["Camera-to-computer cabling", "Connects the camera to the onboard computer (e.g., 10GBASE-T copper or SFP+ fiber, matching the camera's native 10G Ethernet port)", "1 / aircraft", "$200–500"],
     ["Removable NVMe drives", "Swappable drives; full drive out, blank drive in after landing (e.g., U.2 or M.2 NVMe in a hot-swap carrier/sled)", "4 / aircraft", "$1,600–3,200"],
     ["Aircraft installation", "Mounting, wiring, power for the onboard computer", "1 / aircraft", "$2,000–8,000"],
@@ -112,7 +112,7 @@ const children = [
   h3sub("Fleet-wide software — built once, regardless of fleet size"),
   equipmentTable([
     ["Camera software license", "Lets the onboard computer connect to the camera", "1 / fleet", "$0"],
-    ["Onboard QC software development", "Camera-SDK integration (Phase One capture SDK over 10G Ethernet), per-photo quality checks against the ~2–5 MP embedded preview, coverage-vs-flight-plan logic, checksum/manifest system", "1 (fleet-wide, one-time)", "$40,000–90,000"],
+    ["Onboard capture & coverage-check software development", "Camera-SDK integration (Phase One capture SDK over 10G Ethernet), coverage-vs-flight-plan logic, checksum/manifest system", "1 (fleet-wide, one-time)", "$25,000–56,000"],
   ]),
   note("Built once and deployed to every aircraft and FBO — does not repeat as the fleet grows."),
 
@@ -148,6 +148,7 @@ const children = [
   bullet("Equipment examples (specific interconnects, drive form factors, etc.) are illustrative, not vendor-mandated — any equivalent spec meeting the stated function works"),
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
   bullet("GeoServer web-service automation is scoped lower than the other new items because working REST-API connection code against this exact GeoServer instance already exists (geoserver_seed_cost.py, gsd_cost_table.py) — not a from-scratch integration"),
+  bullet("Onboard capture & coverage-check software development excludes per-photo image-quality analysis (blur, exposure, haze, glint detection) — scoped to camera integration, flight-coverage checking, and the checksum/manifest system only"),
 ];
 
 writeDoc(buildDocument("RGB Minimal Touch Upgrade Road Map", children), "RGB_Minimal_Touch_Upgrade_Road_Map.docx");
