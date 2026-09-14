@@ -360,6 +360,21 @@ const doc = new Document({
       ),
       note("Despite 135,000 images being 37% fewer than 215,000, total conversion cost comes out nearly identical (within ~2.5%) — because total pixel volume, which is what compute cost tracks, is almost the same either way. The 250 MP camera trades file count for per-file size; it doesn't reduce processing cost."),
 
+      h2("Whole-AOI batch processing time (22 parallel VMs)", NAVY),
+      body("A different question from the per-sortie turnaround above: if the entire AOI had to be mosaic-processed as one batch — e.g. catching up a backlog — how long would it take running the demonstrated 22-VM burst capacity flat out? Modeled using a real measured build as the throughput unit: cpd26-22-d6, 430 images in 23.92 hours (17.98 img/hr), the largest single real build on record. 150 MP uses that time as-is; 250 MP scales it by the same 1.63× pixel ratio used throughout this document — not independently measured."),
+      compareTable(
+        ["", "150 MP", "250 MP"],
+        [
+          ["AOI total", "215,000 images", "135,000 images"],
+          ["Time per 430-image package", "23.92 h (measured)", "39.0 h (extrapolated)"],
+          ["Packages needed", "500", "314"],
+          ["Waves across 22 parallel VMs", "23", "15"],
+          ["Total batch processing time", "~550 h (~22.9 days)", "~585 h (~24.4 days)"],
+        ],
+        [3760, 2800, 2800]
+      ),
+      note("250 MP again comes out slightly slower overall (~24.4 vs. ~22.9 days) despite 37% fewer images, for the same reason as the per-sortie comparison: processing time tracks total pixels, not file count. A smoother cross-check using total compute-hours instead of discrete 22-wide waves gives ~22.6 days (150 MP) and ~23.2 days (250 MP) — the gap to the wave-based figures above is the wall-clock cost of each scenario's last, partial wave running under a full VM pool."),
+
       h1("7", "Key Assumptions & Risks"),
       bullet("Planning basis: this project's AOI, collected and delivered quarterly, at 1 sortie/day, 1 aircraft, ~480 GB/sortie on the 150 MP camera — measured from a real project sortie, not estimated"),
       bullet("Development figures are rough engineering estimates pending detailed scoping, not vendor quotes"),
