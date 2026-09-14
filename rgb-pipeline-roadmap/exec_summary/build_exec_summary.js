@@ -375,6 +375,23 @@ const doc = new Document({
       ),
       note("250 MP again comes out slightly slower overall (~24.4 vs. ~22.9 days) despite 37% fewer images, for the same reason as the per-sortie comparison: processing time tracks total pixels, not file count. A smoother cross-check using total compute-hours instead of discrete 22-wide waves gives ~22.6 days (150 MP) and ~23.2 days (250 MP) — the gap to the wave-based figures above is the wall-clock cost of each scenario's last, partial wave running under a full VM pool."),
 
+      h2("Collection time & cost, by fleet configuration (10 cm)", NAVY),
+      body("Real internal flight-planning estimates at 10 cm resolution — matching the image-volume basis (215,000 / 135,000 images) used throughout this document. A different cost category from the infrastructure and cloud figures elsewhere: this is flight operations cost (aircraft, crew, fuel) to physically collect the AOI, not included in the Section 6 or Key Metrics totals above. PAS150 = the current 150 MP camera; RS250 = the 250 MP camera discussed throughout this document. A matching 7.5 cm comparison will be added once those image volumes are available — don't compare figures across the two resolutions until then."),
+      compareTable(
+        ["Configuration", "Hours", "Winter days", "Summer days", "Winter cost", "Summer cost"],
+        [
+          ["1× PAS150 (current)", "425", "107", "63", "$176,055", "$165,582"],
+          ["1× RS250", "321", "81", "48", "$133,528", "$125,867"],
+          ["1× PAS150 + 1× RS250", "183", "46", "28", "$152,830", "$145,415"],
+          ["2× RS250", "161", "41", "24", "$135,346", "$127,076"],
+          ["1× PAS150 + 2× RS250", "117", "30", "18", "$148,349", "$140,415"],
+          ["3× RS250", "107", "27", "16", "$135,488", "$127,827"],
+          ["4× RS250", "81", "15", "12", "$140,028", "$129,614"],
+        ],
+        [2400, 1090, 1290, 1290, 1645, 1645]
+      ),
+      note("At 10 cm, a single RS250 already fits the quarter in both seasons (81 winter days, 48 summer — a 9-day winter margin), unlike at finer resolutions. PAS150 alone still fails winter (107 days) though it clears summer (63 days). The more useful finding: RS250 fleet cost is nearly flat from 1 to 3 aircraft (~$133,500–135,500 winter) — adding a second or third RS250 barely changes total cost, because total flight hours stay roughly the same, just split across more aircraft in parallel. Once RS250 is the chosen camera, fleet size becomes a schedule/margin decision, not a cost one — going from 1 to 2 aircraft roughly doubles collection speed (81→41 winter days) for about 1.4% more cost."),
+
       h1("7", "Key Assumptions & Risks"),
       bullet("Planning basis: this project's AOI, collected and delivered quarterly, at 1 sortie/day, 1 aircraft, ~480 GB/sortie on the 150 MP camera — measured from a real project sortie, not estimated"),
       bullet("Development figures are rough engineering estimates pending detailed scoping, not vendor quotes"),
