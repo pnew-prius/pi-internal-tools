@@ -16,7 +16,6 @@ const children = [
 
   statRow([
     { number: "3", label: "Pipeline legs — Collection, FBO, Cloud", color: NAVY },
-    { number: "8", label: "Gaps to close to reach finished state", color: TEAL },
     { number: "$88,100–213,300", label: "Capital cost to build", color: AMBER },
     { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
