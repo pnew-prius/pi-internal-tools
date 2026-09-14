@@ -7,8 +7,8 @@ const { Paragraph } = require("docx");
 
 const children = [
   ...docTitle(
-    "RGB Imagery Pipeline — Cloud Migration",
-    "Upgrade Plan — Architecture, Capabilities & Equipment",
+    "RGB Minimal Touch Upgrade Road Map",
+    "Architecture, Capabilities & Equipment",
     "13 September 2026",
     "Scope",
     "Aircraft capture through customer delivery — three legs, one project's AOI, collected & delivered quarterly"
@@ -110,4 +110,4 @@ const children = [
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
 ];
 
-writeDoc(buildDocument("RGB Imagery Pipeline — Cloud Migration · Upgrade Plan", children), "RGB_Pipeline_Upgrade_Plan.docx");
+writeDoc(buildDocument("RGB Minimal Touch Upgrade Road Map", children), "RGB_Minimal_Touch_Upgrade_Road_Map.docx");

@@ -11,7 +11,7 @@ const children = [
     "Costs & Timelines",
     "13 September 2026",
     "Scope",
-    "Steady-state, post-upgrade operation over the Permian AOI — collected & delivered quarterly. Assumes the RGB Imagery Pipeline upgrade (companion Upgrade Plan document) is complete; no one-time build costs included."
+    "Steady-state, post-upgrade operation over the Permian AOI — collected & delivered quarterly. Assumes the RGB Minimal Touch Upgrade Road Map is complete; no one-time build costs included."
   ),
 
   statRow([
@@ -21,7 +21,7 @@ const children = [
   ]),
 
   h2("Key Notes", NAVY),
-  bullet("This document assumes the RGB Imagery Pipeline upgrade (see the companion Upgrade Plan document) is complete and operating. All figures below are steady-state, post-upgrade recurring costs and turnaround times — no one-time build or equipment costs are included; those are itemized in the companion document."),
+  bullet("This document assumes the RGB Minimal Touch Upgrade Road Map (see the companion document) is complete and operating. All figures below are steady-state, post-upgrade recurring costs and turnaround times — no one-time build or equipment costs are included; those are itemized in the companion document."),
   bullet("The ~$6,830–6,990/month recurring figure is scoped to this project's AOI (collected and delivered quarterly), not total company volume — it is not comparable to whole-company historical billing."),
   bullet("Cloud figures reflect real, current metered rates; flight-collection figures reflect real internal flight-planning estimates."),
 
@@ -104,12 +104,12 @@ const children = [
 
   h1("6", "Key Assumptions & Risks"),
   bullet("Planning basis: this project's AOI, collected and delivered quarterly, at 1 sortie/day, 1 aircraft, ~480 GB/sortie on the 150 MP camera — measured from a real project sortie, not estimated"),
-  bullet("Assumes the RGB Imagery Pipeline upgrade is complete and operating; one-time build/equipment costs are out of scope here — see the companion Upgrade Plan document"),
+  bullet("Assumes the RGB Minimal Touch Upgrade Road Map is complete and operating; one-time build/equipment costs are out of scope here — see the companion document"),
   bullet("Cloud figures reflect real, current metered rates for the existing pipeline; delivery storage is a shared account also used by other projects, not isolated to this pipeline"),
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Recurring Cost Detail"),
-  body("Itemized detail behind the Section 1 recurring-cost rollup. One-time build/equipment costs behind these services are itemized separately in the companion Upgrade Plan document, Appendix A."),
+  body("Itemized detail behind the Section 1 recurring-cost rollup. One-time build/equipment costs behind these services are itemized separately in the companion RGB Minimal Touch Upgrade Road Map, Appendix A."),
 
   h2("A.1  FBO to Cloud", TEAL),
   equipmentTable([
