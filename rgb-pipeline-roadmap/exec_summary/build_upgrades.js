@@ -25,6 +25,7 @@ const children = [
   bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
   bullet("Image conversion already works for the basics, proven on real project imagery."),
   bullet("Customer delivery is handled separately, via the Mercator platform's Data Portal."),
+  bullet("All equipment throughout this document is priced as new procurement — no reuse of existing hardware is assumed."),
 
   new Paragraph({ spacing: { before: 260 }, children: [] }),
 
@@ -87,6 +88,14 @@ const children = [
   note("*Ongoing cost here is equipment and cloud operating cost only — internet circuit, cloud storage, image processing, hosting. It does not include flight operations (crew, fuel, aircraft time); that cost is tracked separately in the companion Quarterly Permian Collection — Costs & Timelines document."),
   note("Collection to FBO isn't one number — it's an aircraft cost plus a ground-station cost, and one ground station can support several aircraft. FBO to Cloud is a ground-station cost too. Cloud to Delivery is a single cloud-side cost that doesn't repeat no matter how many aircraft or ground stations you add. Full technical detail and itemized pricing are in Appendix A."),
 
+  h1("7", "Risks"),
+  bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — actual costs may differ."),
+  bullet("Onboard capture & coverage-check software development is the largest cost item and has no reference codebase to build from, unlike image conversion and GeoServer automation."),
+  bullet("Aircraft installation cost has the widest range of any line item — it depends on airframe type and existing equipment-bay access, which vary by aircraft."),
+  bullet("GeoServer web-service automation assumes it can run inside the Azure network without hitting the external access restriction that blocks it today — not yet verified."),
+  bullet("The 8–14 week timeline assumes no resourcing constraints. Constrained engineering resources would extend it."),
+  bullet("Hardware lead time for onboard computers, drives, and docking stations is not yet committed and could push out the start of the timeline."),
+
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Technical Addendum"),
   body("One-time equipment, installation, and build costs underlying the upgrade, by pipeline leg — what it takes to reach finished state, with the specific technologies involved and how each piece works. Recurring operating costs, once the upgrade is live and running, are itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here. Each item below is labeled by what it scales with: per aircraft, per FBO (one FBO can serve several aircraft), or fleet-wide (built once regardless of fleet size)."),
@@ -144,7 +153,6 @@ const children = [
   bullet("GeoServer publishing: a cloud service inside the same Azure VNet as the GeoServer VM calls its REST API to create a workspace, coverage store, layer, and style per project and expose it as a WMS/WMTS web service — the same steps done by hand today through the GeoServer web UI"),
 
   h2("A.4  Notes on Figures", TEAL),
-  bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
   bullet("Equipment examples (specific interconnects, drive form factors, etc.) are illustrative, not vendor-mandated — any equivalent spec meeting the stated function works"),
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
   bullet("GeoServer web-service automation is scoped lower than the other new items because working REST-API connection code against this exact GeoServer instance already exists (geoserver_seed_cost.py, gsd_cost_table.py) — not a from-scratch integration"),
