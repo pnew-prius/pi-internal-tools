@@ -24,12 +24,13 @@ const children = [
   h2("Key Notes", NAVY),
   bullet("This document covers what's being built and why, leg by leg, plus the itemized one-time equipment and build costs behind each leg. Recurring operating costs, flight-collection costs, and processing turnaround — all steady-state, post-upgrade figures — live in the companion Quarterly Permian Collection — Costs & Timelines document."),
   bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — refine before committing budget."),
-  bullet("All figures are scoped to this project's AOI (collected and delivered quarterly), not total company volume."),
+  bullet("All figures are scoped to this project's AOI (collected and delivered quarterly), not total company operations."),
+  bullet("Costs are broken out by what actually scales with what: per-aircraft costs repeat for each additional plane, per-FBO costs repeat only for each additional ground station (one FBO can serve several aircraft), and fleet-wide costs are built once regardless of fleet size."),
 
   new Paragraph({ spacing: { before: 260 }, children: [] }),
 
   h1("1", "Work To Be Done — Scope"),
-  body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs. The architecture below is the general approach for minimal-touch collection to delivery; the volumes and costs in this document are scoped to one project's AOI, collected and delivered quarterly — not total company volume:"),
+  body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs. The architecture below is the general approach for minimal-touch collection to delivery; costs in this document are scoped to one project's AOI, collected and delivered quarterly, and separate what repeats per aircraft from what repeats per FBO — a single FBO can serve several aircraft:"),
   bullet("Collection to FBO — verified capture, in-flight quality checks, and physical transport of raw imagery from the aircraft to the office", { bold: true }),
   bullet("FBO to Cloud — reliable, automated upload of raw imagery from the office into cloud storage", { bold: true }),
   bullet("Cloud to Delivery — EO (trajectory) postprocessing, image conversion, packaging, and orthomosaic stitching, published as an automated web service, entirely on cloud infrastructure", { bold: true }),
@@ -68,7 +69,7 @@ const children = [
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Technical Addendum"),
-  body("One-time equipment, installation, and build costs underlying the upgrade, by pipeline leg — what it takes to reach finished state. Recurring operating costs, once the upgrade is live and running, are itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
+  body("One-time equipment, installation, and build costs underlying the upgrade, by pipeline leg — what it takes to reach finished state. Recurring operating costs, once the upgrade is live and running, are itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here. Each item below is labeled by what it scales with: per aircraft, per FBO (one FBO can serve several aircraft), or fleet-wide (built once regardless of fleet size)."),
 
   h2("A.1  Collection to FBO", TEAL),
   body("This document assumes 1 aircraft and 1 FBO. Split below by what actually scales with what — an additional aircraft at the same FBO repeats only the per-aircraft rows; an additional FBO (serving any number of aircraft) repeats only the per-FBO rows; the software rows are built once, fleet-wide, and never repeat."),
@@ -96,25 +97,26 @@ const children = [
   note("Built once and deployed to every aircraft and FBO — does not repeat as the fleet grows."),
 
   h2("A.2  FBO to Cloud", TEAL),
+  body("Per FBO — repeats for each additional ground station; a second aircraft based at the same FBO does not add this cost again:"),
   equipmentTable([
     ["Office workstation", "Computer that stages the day's data and hosts the upload software", "1 / office", "$1,500–3,500"],
     ["10 TB local drive", "Buffer storage; holds data if the internet link is down", "1 / office", "$300–600"],
     ["10-gigabit network switch", "Network hardware linking docking stations and workstation", "1 / office", "$300–800"],
     ["Data Box Gateway", "Free software that uploads to the cloud and auto-retries on failure", "1 / office", "$0"],
-    ["Gateway setup & ingest automation", "Configures Data Box Gateway, upload verification, monitoring/alerting", "1 (one-time)", "$4,000–12,000"],
+    ["Gateway setup & ingest automation", "Configures Data Box Gateway, upload verification, monitoring/alerting", "1 / office", "$4,000–12,000"],
   ]),
-  note("The internet circuit and cloud staging storage this gateway runs on are recurring operating costs — itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
+  note("Subtotal per FBO: $6,100–16,900 one-time. The internet circuit and cloud staging storage this gateway runs on are recurring operating costs — itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
 
   h2("A.3  Cloud to Delivery", TEAL),
-  body("Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The build costs on this leg are the integration and automation work to wire the pieces together:"),
+  body("Fleet-wide — built once in the cloud, regardless of aircraft or FBO count. Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The build costs on this leg are the integration and automation work to wire the pieces together:"),
   equipmentTable([
-    ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (one-time)", "$12,000–30,000"],
-    ["EO postprocessing — VM setup", "Stands up an Azure Windows Server VM and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation, assuming the license relocates seamlessly", "1 (one-time)", "$2,000–5,000"],
-    ["EO postprocessing — automation", "Builds automation around POSPacBatch.exe: feeds each sortie's GNSS/IMU log, retrieves and validates the trajectory output, wires it into the pipeline", "1 (one-time)", "$8,000–20,000"],
-    ["Geospatial packaging automation", "Automates producing today's package format (converted images + GPS/trajectory data as a zip) from cloud-landed data, triggering the existing One-Button Mosaic pipe the same way the current manual upload does", "1 (one-time)", "$8,000–20,000"],
-    ["GeoServer web-service automation", "Builds REST API automation to create a workspace/layer/store/style per project, running inside the VNet alongside GeoServer, triggered when new processed imagery lands", "1 (one-time)", "$6,000–15,000"],
+    ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (fleet-wide, one-time)", "$12,000–30,000"],
+    ["EO postprocessing — VM setup", "Stands up an Azure Windows Server VM and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation, assuming the license relocates seamlessly", "1 (fleet-wide, one-time)", "$2,000–5,000"],
+    ["EO postprocessing — automation", "Builds automation around POSPacBatch.exe: feeds each sortie's GNSS/IMU log, retrieves and validates the trajectory output, wires it into the pipeline", "1 (fleet-wide, one-time)", "$8,000–20,000"],
+    ["Geospatial packaging automation", "Automates producing today's package format (converted images + GPS/trajectory data as a zip) from cloud-landed data, triggering the existing One-Button Mosaic pipe the same way the current manual upload does", "1 (fleet-wide, one-time)", "$8,000–20,000"],
+    ["GeoServer web-service automation", "Builds REST API automation to create a workspace/layer/store/style per project, running inside the VNet alongside GeoServer, triggered when new processed imagery lands", "1 (fleet-wide, one-time)", "$6,000–15,000"],
   ]),
-  note("Subtotal, Cloud to Delivery: $36,000–90,000 one-time."),
+  note("Subtotal, Cloud to Delivery: $36,000–90,000 one-time, fleet-wide — doesn't repeat per aircraft or per FBO."),
 
   h2("A.4  Notes on Figures", TEAL),
   bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
