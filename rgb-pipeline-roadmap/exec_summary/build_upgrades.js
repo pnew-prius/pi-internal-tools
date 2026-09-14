@@ -24,6 +24,8 @@ const children = [
   bullet("Collection to FBO is the largest engineering scope and bounds the overall timeline, at 8–14 weeks running fully parallel with no resourcing constraints."),
   bullet("The 8–14 week timeline starts once the roles in Section 5 are onboarded — it does not include time to hire or contract them."),
   bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
+  bullet("Adding an aircraft to an existing fleet costs $5,800–15,700 one-time — see Section 7."),
+  bullet("Adding a new FBO costs $6,300–17,600 one-time — see Section 8."),
   bullet("Image conversion already works for the basics, proven on real project imagery."),
   bullet("Customer delivery is handled separately, via the Mercator platform's Data Portal."),
   bullet("All equipment throughout this document is priced as new procurement — no reuse of existing hardware is assumed."),
@@ -102,9 +104,26 @@ const children = [
     ],
     [4680, 4680]
   ),
-  note("A new FBO to base the aircraft at instead adds $200–700 more, one-time. See Appendix A.1 for the full itemized breakdown."),
+  note("A new FBO to base the aircraft at instead costs more — see Section 8, Cost of Additional FBO."),
 
-  h1("8", "Risks"),
+  h1("8", "Cost of Additional FBO"),
+  body("A new FBO — a new ground station, not just an additional aircraft at one that already exists — costs the per-FBO hardware and setup below."),
+  compareTable(
+    ["Item", "Cost"],
+    [
+      ["Docking stations", "$200–700"],
+      ["Office workstation", "$1,500–3,500"],
+      ["10 TB local drive", "$300–600"],
+      ["10-gigabit network switch", "$300–800"],
+      ["Data Box Gateway", "$0"],
+      ["Gateway setup & ingest automation", "$4,000–12,000"],
+      ["Total per additional FBO", "$6,300–17,600"],
+    ],
+    [4680, 4680]
+  ),
+  note("This covers the ground station only, not an aircraft — see Section 7 for aircraft cost. See Appendix A.1 and A.2 for the full itemized breakdown."),
+
+  h1("9", "Risks"),
   bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — actual costs may differ."),
   bullet("Onboard capture & coverage-check software development is the largest cost item and has no reference codebase to build from, unlike image conversion and GeoServer automation."),
   bullet("Aircraft installation cost has the widest range of any line item — it depends on airframe type and existing equipment-bay access, which vary by aircraft."),
