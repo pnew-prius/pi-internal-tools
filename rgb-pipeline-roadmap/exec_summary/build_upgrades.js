@@ -16,7 +16,7 @@ const children = [
 
   statRow([
     { number: "8–14 wks", label: "Fastest possible, fully parallel", color: NAVY },
-    { number: "$73,100–179,300", label: "Capital cost to build", color: AMBER },
+    { number: "$67,600–162,300", label: "Capital cost to build", color: AMBER },
     { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
 
@@ -111,6 +111,7 @@ const children = [
   bullet("GeoServer web-service automation assumes it can run inside the Azure network without hitting the external access restriction that blocks it today — not yet verified."),
   bullet("The 8–14 week timeline assumes no resourcing constraints. Constrained engineering resources would extend it."),
   bullet("Hardware lead time for onboard computers, drives, and docking stations is not yet committed and could push out the start of the timeline."),
+  bullet("EO postprocessing VM setup assumes reuse of an existing idle Azure VM (imageproc02) rather than new procurement — its availability hasn't been confirmed with whoever manages it."),
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Technical Addendum"),
@@ -155,13 +156,13 @@ const children = [
   h2("A.3  Cloud to Delivery", TEAL),
   body("Fleet-wide — built once in the cloud, regardless of aircraft or FBO count. Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live. The build costs on this leg are the integration and automation work to wire the pieces together:"),
   equipmentTable([
-    ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline (Phase One Image SDK, C++) into mosaic → GDAL → publish end to end", "1 (fleet-wide, one-time)", "$12,000–30,000"],
-    ["EO postprocessing — VM setup", "Stands up an Azure Windows Server VM and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation via POSPacBatch.exe, assuming the license relocates seamlessly", "1 (fleet-wide, one-time)", "$2,000–5,000"],
-    ["EO postprocessing — automation", "Builds automation around POSPacBatch.exe (Applanix POSPac MMS batch command-line mode): feeds each sortie's GNSS/IMU log, retrieves and validates the trajectory (EO) output, wires it into the pipeline", "1 (fleet-wide, one-time)", "$8,000–20,000"],
-    ["Geospatial packaging automation", "Automates producing today's package format (converted images + GPS/trajectory CSV + KML + metadata.json, zipped) from cloud-landed data, triggering the existing One-Button Mosaic pipe the same way the current manual upload does", "1 (fleet-wide, one-time)", "$8,000–20,000"],
+    ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline (Phase One Image SDK, C++) into mosaic → GDAL → publish end to end — extending the existing webhook-triggered Azure Automation runbooks (create-imagery, bootstrap-gdal) already orchestrating mosaic and GDAL", "1 (fleet-wide, one-time)", "$12,000–26,000"],
+    ["EO postprocessing — VM setup", "Reuses an existing idle Azure VM (imageproc02, same VM family already used elsewhere in this pipeline) and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation via POSPacBatch.exe, assuming the license relocates seamlessly and the VM is available", "1 (fleet-wide, one-time)", "$500–2,000"],
+    ["EO postprocessing — automation", "Builds automation around POSPacBatch.exe (Applanix POSPac MMS batch command-line mode): feeds each sortie's GNSS/IMU log, retrieves and validates the trajectory (EO) output, wires it into the pipeline — following the same webhook/job-queue pattern as the existing bootstrap-gdal runbook", "1 (fleet-wide, one-time)", "$7,000–18,000"],
+    ["Geospatial packaging automation", "Automates producing today's package format (converted images + GPS/trajectory CSV + KML + metadata.json, zipped) from cloud-landed data, triggering the existing One-Button Mosaic pipe the same way the current manual upload does — the existing create-imagery runbook already implements the same zip-packaging and GPS-to-image matching logic", "1 (fleet-wide, one-time)", "$5,000–12,000"],
     ["GeoServer web-service automation", "Builds automation against the GeoServer REST API to create a workspace/coverage store/layer/style per project (exposed as WMS/WMTS), running inside the Azure VNet alongside the GeoServer VM, triggered when new processed imagery lands", "1 (fleet-wide, one-time)", "$6,000–15,000"],
   ]),
-  note("Subtotal, Cloud to Delivery: $36,000–90,000 one-time, fleet-wide — doesn't repeat per aircraft or per FBO."),
+  note("Subtotal, Cloud to Delivery: $30,500–73,000 one-time, fleet-wide — doesn't repeat per aircraft or per FBO."),
 
   h3sub("How the new automation works"),
   bullet("EO postprocessing: an Azure-hosted Windows VM runs Applanix POSPac MMS headlessly via POSPacBatch.exe, consuming each sortie's raw GNSS/IMU log plus PP-RTX correction, and producing the trajectory (exterior orientation, or EO) file the mosaic step needs"),
@@ -173,6 +174,7 @@ const children = [
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
   bullet("GeoServer web-service automation is scoped lower than the other new items because working REST-API connection code against this exact GeoServer instance already exists (geoserver_seed_cost.py, gsd_cost_table.py) — not a from-scratch integration"),
   bullet("Onboard capture & coverage-check software development excludes per-photo image-quality analysis (blur, exposure, haze, glint detection) — scoped to camera integration, flight-coverage checking, and the checksum/manifest system only"),
+  bullet("Cloud pipeline integration, EO postprocessing automation, and geospatial packaging automation were re-costed against real, existing Azure Automation runbooks (create-imagery, bootstrap-gdal, in pi-automationacc) rather than from-scratch estimates — confirmed live against the Azure subscription, not assumed"),
 ];
 
 writeDoc(buildDocument("RGB Minimal Touch Upgrade Road Map", children), "RGB_Minimal_Touch_Upgrade_Road_Map.docx");
