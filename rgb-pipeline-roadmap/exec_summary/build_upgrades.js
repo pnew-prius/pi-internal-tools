@@ -40,13 +40,14 @@ const children = [
   bullet("Aircraft turn around in minutes using swappable drive modules — no waiting on a copy"),
   bullet("Raw imagery uploads from the office to the cloud automatically, recovering on its own from any interruption"),
   bullet("Raw-image conversion, orthomosaic stitching, and file finishing all run on cloud compute that scales to zero between flights"),
-  bullet("Finished imagery is published and delivered to customers without manual handling"),
+  bullet("Finished imagery is published and delivered to customers without manual handling — delivery itself via the Mercator platform's Data Portal, outside this document's scope"),
 
   h1("3", "Current State Capabilities"),
   bullet("Orthomosaic stitching and file finishing already run on cloud compute — operating today"),
   bullet("The imagery server already publishes finished imagery — operating today"),
-  bullet("Delivery storage and content delivery already serve customers — operating today"),
   bullet("Image capture handling, in-flight quality checking, drive management, and converting raw camera files into working images remain manual, on-premise steps on office workstations", { color: RUST }),
+  bullet("Customer delivery is not in place — getting finished imagery to customers is a manual process today, not an automated handoff", { color: RUST }),
+  note("Customer-facing, self-service delivery is being built separately as the Data Portal track of the Mercator platform — out of scope for this document. This roadmap covers Collection through publishing on the image server; it does not include a delivery build."),
 
   h1("4", "Gaps"),
   body("Correlated to the three legs in Section 1:"),
@@ -58,6 +59,7 @@ const children = [
   h2("Cloud to Delivery", TEAL),
   bullet("Image-conversion pipeline (real GitHub repo) has core conversion, geometric correction, and ICC embedding proven on production imagery; SDK-native sharpening and a clarity feature are not yet built or tuned"),
   bullet("No automated pipeline wiring the landing point through conversion into the existing stitching and finishing steps"),
+  note("Customer delivery itself is a separate gap, owned by the Mercator platform's Data Portal track — not counted among this document's gaps or costs."),
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Technical Addendum"),
