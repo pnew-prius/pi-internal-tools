@@ -11,7 +11,7 @@ const children = [
     "Architecture, Capabilities & Equipment",
     "13 September 2026",
     "Scope",
-    "Aircraft capture through customer delivery — three legs, one project's AOI, collected & delivered quarterly"
+    "Aircraft capture through cloud publishing — three legs: Collection to FBO, FBO to Cloud, Cloud to Delivery"
   ),
 
   statRow([
