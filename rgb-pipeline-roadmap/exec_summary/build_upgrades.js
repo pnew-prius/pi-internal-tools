@@ -1,7 +1,7 @@
 const {
   NAVY, TEAL, AMBER, RUST, MUTED, USABLE, PageBreak,
   docTitle, statRow, h1, h2, h3sub, body, bullet, note,
-  equipmentTable, compareTable, buildDocument, writeDoc,
+  equipmentTable, compareTable, costTable, buildDocument, writeDoc,
 } = require("./docx_helpers");
 const { Paragraph, AlignmentType } = require("docx");
 
@@ -17,21 +17,12 @@ const children = [
   statRow([
     { number: "3", label: "Pipeline legs — Collection, FBO, Cloud", color: NAVY },
     { number: "8", label: "Gaps to close to reach finished state", color: TEAL },
-    { number: "Built", label: "Image conversion — already works, needs finishing touches", color: MUTED },
-    { number: "$88,100–213,300", label: "Total one-time cost to build", color: AMBER },
+    { number: "$88,100–213,300", label: "Capital cost to build", color: AMBER },
+    { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
 
-  h2("Key Notes", NAVY),
-  bullet("This document covers what's being built and why, leg by leg, who builds it, and what it costs — in plain language. Appendix A has the full technical detail: itemized equipment, specific technologies, and how each piece works."),
-  bullet("Development figures throughout this document are rough engineering estimates, not vendor quotes — refine before committing budget."),
-  bullet("All figures are scoped to this project's AOI (collected and delivered quarterly), not total company operations."),
-  bullet("Costs are broken out by what actually scales with what: per-aircraft costs repeat for each additional plane, per-FBO costs repeat only for each additional ground station (one FBO can serve several aircraft), and fleet-wide costs are built once regardless of fleet size."),
-  bullet("Recurring operating costs, flight-collection costs, and processing turnaround — all steady-state, post-upgrade figures — live in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
-
-  new Paragraph({ spacing: { before: 260 }, children: [] }),
-
   h1("1", "Work To Be Done — Scope"),
-  body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs. The architecture below is the general approach for minimal-touch collection to delivery; costs in this document are scoped to one project's AOI, collected and delivered quarterly, and separate what repeats per aircraft from what repeats per FBO — a single FBO can serve several aircraft:"),
+  body("Move RGB aerial-imagery processing off on-premise office workstations and onto cloud infrastructure, in three legs:"),
   bullet("Collection to FBO — verified capture, in-flight quality checks, and physical transport of raw imagery from the aircraft to the office", { bold: true }),
   bullet("FBO to Cloud — reliable, automated upload of raw imagery from the office into cloud storage", { bold: true }),
   bullet("Cloud to Delivery — turning raw imagery into finished, ready-to-view maps and publishing them online automatically, entirely on cloud infrastructure", { bold: true }),
@@ -43,7 +34,7 @@ const children = [
   bullet("Raw imagery uploads from the office to the cloud automatically, recovering on its own from any interruption"),
   bullet("Converting, correcting, and stitching imagery into finished maps all run on cloud computers that turn off automatically when not in use"),
   bullet("Each new project's imagery is automatically published online — no manual setup required"),
-  bullet("Finished imagery is published and delivered to customers without manual handling — delivery itself via the Mercator platform's Data Portal, outside this document's scope"),
+  bullet("Finished imagery is published and delivered to customers without manual handling — delivery itself via the Mercator platform's Data Portal"),
 
   h1("3", "Current State Capabilities"),
   bullet("Orthomosaic stitching and file finishing already run on cloud compute — operating today"),
@@ -51,7 +42,7 @@ const children = [
   bullet("Image capture handling, in-flight quality checking, drive management, converting raw camera files into working images, correcting flight-position data, and bundling files for the next step remain manual, on-premise steps on office workstations", { color: RUST }),
   bullet("Publishing a new project's imagery online is manual today — someone has to set it up by hand", { color: RUST }),
   bullet("Customer delivery is not in place — getting finished imagery to customers is a manual process today, not an automated handoff", { color: RUST }),
-  note("Customer-facing, self-service delivery is being built separately as the Data Portal track of the Mercator platform — out of scope for this document. This roadmap covers Collection through publishing on the image server; it does not include a delivery build."),
+  note("Customer-facing, self-service delivery is being built separately as the Data Portal track of the Mercator platform."),
 
   h1("4", "Gaps"),
   body("Correlated to the three legs in Section 1:"),
@@ -66,7 +57,7 @@ const children = [
   bullet("Correcting flight-position data (from GPS/inertial sensors) still happens manually on desktop software — not yet moved to the cloud or automated"),
   bullet("Bundling processed images and flight data together for the next processing step is still done by hand"),
   bullet("Publishing each new project's imagery online is still manual — nothing does this automatically yet"),
-  note("Customer delivery itself is a separate gap, owned by the Mercator platform's Data Portal track — not counted among this document's gaps or costs."),
+  note("Customer delivery itself is a separate gap, owned by the Mercator platform's Data Portal track."),
 
   h1("5", "Resources"),
   body("Roles needed to close the gaps above."),
@@ -84,17 +75,9 @@ const children = [
   note("Rates and total hours are not yet scoped."),
 
   h1("6", "Cost"),
-  body("One-time cost to build this, by leg. Collection to FBO is the largest and most variable piece because it scales with your fleet — see the note below and Appendix A.1 for the full aircraft-vs-FBO breakdown."),
-  compareTable(
-    ["Leg", "One-time cost"],
-    [
-      ["Collection to FBO", "$46,000–106,400"],
-      ["FBO to Cloud", "$6,100–16,900"],
-      ["Cloud to Delivery", "$36,000–90,000"],
-      ["Total", "$88,100–213,300"],
-    ],
-    [4680, 4680]
-  ),
+  body("Capital and ongoing cost, by leg."),
+  costTable(),
+  note("*Ongoing cost here is equipment and cloud operating cost only — internet circuit, cloud storage, image processing, hosting. It does not include flight operations (crew, fuel, aircraft time); that cost is tracked separately in the companion Quarterly Permian Collection — Costs & Timelines document."),
   note("Collection to FBO isn't one number — it's an aircraft cost plus a ground-station cost, and one ground station can support several aircraft. FBO to Cloud is a ground-station cost too. Cloud to Delivery is a single cloud-side cost that doesn't repeat no matter how many aircraft or ground stations you add. Full technical detail and itemized pricing are in Appendix A."),
 
   new Paragraph({ children: [new PageBreak()] }),
@@ -156,7 +139,6 @@ const children = [
   h2("A.4  Notes on Figures", TEAL),
   bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
   bullet("Equipment examples (specific interconnects, drive form factors, etc.) are illustrative, not vendor-mandated — any equivalent spec meeting the stated function works"),
-  bullet("Development figures are rough engineering estimates pending real scoping"),
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
   bullet("GeoServer web-service automation is scoped lower than the other new items because working REST-API connection code against this exact GeoServer instance already exists (geoserver_seed_cost.py, gsd_cost_table.py) — not a from-scratch integration"),
 ];
