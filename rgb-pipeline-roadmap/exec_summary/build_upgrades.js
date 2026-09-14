@@ -16,9 +16,9 @@ const children = [
 
   statRow([
     { number: "3", label: "Pipeline legs — Collection, FBO, Cloud", color: NAVY },
-    { number: "5", label: "Gaps to close to reach finished state", color: TEAL },
+    { number: "8", label: "Gaps to close to reach finished state", color: TEAL },
     { number: "Built", label: "Image conversion — core proven, tuning + orchestration remain", color: MUTED },
-    { number: "$64,100–153,300", label: "Total one-time equipment & build cost (Appendix A)", color: AMBER },
+    { number: "$88,100–213,300", label: "Total one-time equipment & build cost (Appendix A)", color: AMBER },
   ]),
 
   h2("Key Notes", NAVY),
@@ -59,6 +59,9 @@ const children = [
   h2("Cloud to Delivery", TEAL),
   bullet("Image-conversion pipeline (real GitHub repo) has core conversion, geometric correction, and ICC embedding proven on production imagery; SDK-native sharpening and a clarity feature are not yet built or tuned"),
   bullet("No automated pipeline wiring the landing point through conversion into the existing stitching and finishing steps"),
+  bullet("EO (trajectory) postprocessing still runs manually on desktop POSPac software — not yet relocated to the cloud or wired into the automated pipeline"),
+  bullet("Packaging — assembling converted images and GPS/trajectory data into the processing package that feeds mosaic — is still a manual, on-prem step"),
+  bullet("GeoServer web-service creation (workspace/layer/store per project) is still manual — no automation exists to publish new imagery as a service"),
   note("Customer delivery itself is a separate gap, owned by the Mercator platform's Data Portal track — not counted among this document's gaps or costs."),
 
   new Paragraph({ children: [new PageBreak()] }),
@@ -101,15 +104,21 @@ const children = [
   note("The internet circuit and cloud staging storage this gateway runs on are recurring operating costs — itemized in the companion Quarterly Permian Collection — Costs & Timelines document, not here."),
 
   h2("A.3  Cloud to Delivery", TEAL),
-  body("Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The one build cost on this leg is the integration work to wire the pieces together:"),
+  body("Image conversion, orthomosaic processing, and delivery hosting are recurring, usage-based cloud services once the pipeline is live — itemized with the rest of steady-state operating cost in the companion Quarterly Permian Collection — Costs & Timelines document. The build costs on this leg are the integration and automation work to wire the pieces together:"),
   equipmentTable([
     ["Cloud pipeline integration", "Validates SDK sharpening, adds the clarity feature, strips debug/test code, and wires the already-dockerized conversion pipeline into mosaic → GDAL → publish end to end", "1 (one-time)", "$12,000–30,000"],
+    ["EO postprocessing — VM setup", "Stands up an Azure Windows Server VM and installs/configures the existing POSPac MMS + PP-RTX license for headless batch operation, assuming the license relocates seamlessly", "1 (one-time)", "$2,000–5,000"],
+    ["EO postprocessing — automation", "Builds automation around POSPacBatch.exe: feeds each sortie's GNSS/IMU log, retrieves and validates the trajectory output, wires it into the pipeline", "1 (one-time)", "$8,000–20,000"],
+    ["Geospatial packaging automation", "Automates producing today's package format (converted images + GPS/trajectory data as a zip) from cloud-landed data, triggering the existing One-Button Mosaic pipe the same way the current manual upload does", "1 (one-time)", "$8,000–20,000"],
+    ["GeoServer web-service automation", "Builds REST API automation to create a workspace/layer/store/style per project, running inside the VNet alongside GeoServer, triggered when new processed imagery lands", "1 (one-time)", "$6,000–15,000"],
   ]),
+  note("Subtotal, Cloud to Delivery: $36,000–90,000 one-time."),
 
   h2("A.4  Notes on Figures", TEAL),
   bullet("All equipment above is priced as new procurement — no reuse of existing hardware is assumed"),
   bullet("Development figures are rough engineering estimates pending real scoping"),
   bullet("Image conversion's remaining scope was re-costed against a real, private codebase (pi-1000-imageconverter) rather than a from-scratch estimate — it already runs and has build/run Docker environments defined"),
+  bullet("GeoServer web-service automation is scoped lower than the other new items because working REST-API connection code against this exact GeoServer instance already exists (geoserver_seed_cost.py, gsd_cost_table.py) — not a from-scratch integration"),
 ];
 
 writeDoc(buildDocument("RGB Minimal Touch Upgrade Road Map", children), "RGB_Minimal_Touch_Upgrade_Road_Map.docx");
