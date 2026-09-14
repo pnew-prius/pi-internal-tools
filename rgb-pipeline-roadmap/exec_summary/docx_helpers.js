@@ -201,15 +201,16 @@ function costTable() {
   return new Table({ width: { size: USABLE, type: WidthType.DXA }, columnWidths: w, rows: [head, ...rows, total] });
 }
 
-function compareTable(headers, rows, widths) {
+function compareTable(headers, rows, widths, aligns) {
   const w = widths || [3200, 3080, 3080];
+  const a = aligns || headers.map((_, i) => (i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT));
   const head = new TableRow({
     tableHeader: true, cantSplit: true,
-    children: headers.map((h, i) => cell(h, { w: w[i], shade: NAVY, color: "FFFFFF", bold: true, size: 18, align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT })),
+    children: headers.map((h, i) => cell(h, { w: w[i], shade: NAVY, color: "FFFFFF", bold: true, size: 18, align: a[i] })),
   });
   const rowsOut = rows.map((r, i) => new TableRow({
     cantSplit: true,
-    children: r.map((c, j) => cell(c, { w: w[j], shade: i % 2 ? MINT : "FFFFFF", size: 18, bold: j === 0, align: j === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT })),
+    children: r.map((c, j) => cell(c, { w: w[j], shade: i % 2 ? MINT : "FFFFFF", size: 18, bold: j === 0, align: a[j] })),
   }));
   return new Table({ width: { size: USABLE, type: WidthType.DXA }, columnWidths: w, rows: [head, ...rowsOut] });
 }
