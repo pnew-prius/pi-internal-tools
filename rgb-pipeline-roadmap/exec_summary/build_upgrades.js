@@ -15,12 +15,13 @@ const children = [
   ),
 
   statRow([
-    { number: "3", label: "Pipeline legs — Collection, FBO, Cloud", color: NAVY },
+    { number: "8–14 wks", label: "Fastest possible, fully parallel", color: NAVY },
     { number: "$88,100–213,300", label: "Capital cost to build", color: AMBER },
     { number: "~$6,830–6,990/mo", label: "Ongoing equipment & cloud cost", color: MUTED },
   ]),
 
   h2("Key Notes", NAVY),
+  bullet("Collection to FBO is the largest engineering scope and bounds the overall timeline, at 8–14 weeks running fully parallel with no resourcing constraints."),
   bullet("Collection to FBO cost scales with fleet size — a single FBO can serve several aircraft."),
   bullet("Image conversion already works for the basics, proven on real project imagery."),
   bullet("Customer delivery is handled separately, via the Mercator platform's Data Portal."),
