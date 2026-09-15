@@ -44,7 +44,7 @@ const children = [
     ],
     [4680, 4680]
   ),
-  note("*Cloud to Delivery recurring cost includes a derived estimate for image conversion (~$409–566/mo on the 150 MP camera) alongside current metered rates for a shared-tenant workload; see Appendix A.2 and A.3."),
+  note("*Cloud to Delivery recurring cost includes a derived estimate for image conversion (~$406–569/mo on the 150 MP camera) alongside current metered rates for a shared-tenant workload; see Appendix A.2 and A.3."),
 
   h1("2", "Collection Time & Cost, by Fleet Configuration (10 cm)"),
   body("Real internal flight-planning estimates at 10 cm resolution. This is flight operations cost (aircraft, crew, fuel) to physically collect the AOI — a different cost category from the cloud recurring cost in Section 1. PAS150 = the current 150 MP camera; RS250 = the 250 MP camera discussed throughout this document."),
@@ -112,7 +112,7 @@ const children = [
     [
       ["Images, whole project (real)", "215,000", "135,000"],
       ["Total pixel volume (derived)", "~32,530 Gigapixels", "~33,345 Gigapixels"],
-      ["Image-conversion cost, whole project", "$1,226–1,699", "$1,254–1,744 (extrapolated)"],
+      ["Image-conversion cost, whole project", "$1,218–1,706", "$1,247–1,746 (extrapolated)"],
     ],
     [3760, 2800, 2800]
   ),
@@ -166,10 +166,10 @@ const children = [
   compareTable(
     ["", "Flight collection", "Recurring (3 mo)", "Processing", "Total"],
     [
-      ["150 MP, winter quarter", "$176,055", "$20,490–20,970", "$16,964–18,104", "~$213,500–215,100"],
-      ["150 MP, summer quarter", "$165,582", "$20,490–20,970", "$16,964–18,104", "~$203,000–204,700"],
-      ["250 MP, winter quarter", "$133,528", "$20,490–20,970", "$17,365–18,538", "~$171,400–173,000"],
-      ["250 MP, summer quarter", "$125,867", "$20,490–20,970", "$17,365–18,538", "~$163,700–165,400"],
+      ["150 MP, winter quarter", "$176,055", "$20,490–20,970", "$16,955–18,118", "~$213,500–215,100"],
+      ["150 MP, summer quarter", "$165,582", "$20,490–20,970", "$16,955–18,118", "~$203,000–204,700"],
+      ["250 MP, winter quarter", "$133,528", "$20,490–20,970", "$17,353–18,543", "~$171,400–173,000"],
+      ["250 MP, summer quarter", "$125,867", "$20,490–20,970", "$17,353–18,543", "~$163,700–165,400"],
     ],
     [2160, 2160, 2200, 2200, 1640]
   ),
@@ -189,7 +189,7 @@ const children = [
     ],
     [4680, 4680]
   ),
-  note("*Cloud to Delivery recurring cost includes a derived estimate for image conversion (~$743–1,029/mo on the 150 MP camera) alongside the same current metered rates used in Section 1; see Appendix A.3. The 250 MP path runs ~$7,168–7,459/mo total — nearly identical, for the same pixel-volume-parity reason noted in Section 11."),
+  note("*Cloud to Delivery recurring cost includes a derived estimate for image conversion (~$738–1,033/mo on the 150 MP camera) alongside the same current metered rates used in Section 1; see Appendix A.3. The 250 MP path runs ~$7,164–7,460/mo total — nearly identical, for the same pixel-volume-parity reason noted in Section 11."),
 
   h1("9", "Collection Time & Cost, by Fleet Configuration (7.5 cm)"),
   body("Real internal flight-planning estimates at 7.5 cm resolution — the finer resolution needs more flight hours per configuration than the matching 10 cm row, since more images (and more flight coverage) are needed for the same AOI."),
@@ -257,7 +257,7 @@ const children = [
     [
       ["Images, whole project (real)", "390,630", "240,866"],
       ["Total pixel volume (derived)", "~59,109 Gigapixels", "~59,504 Gigapixels"],
-      ["Image-conversion cost, whole project", "$2,228–3,087", "$2,238–3,112 (extrapolated)"],
+      ["Image-conversion cost, whole project", "$2,213–3,100", "$2,225–3,115 (extrapolated)"],
     ],
     [3760, 2800, 2800]
   ),
@@ -310,10 +310,10 @@ const children = [
   compareTable(
     ["", "Flight collection", "Recurring (3 mo)", "Processing", "Total"],
     [
-      ["150 MP, winter quarter", "$237,786", "$21,495–22,353", "$30,819–32,905", "~$290,100–293,000"],
-      ["150 MP, summer quarter", "$224,745", "$21,495–22,353", "$30,819–32,905", "~$277,100–280,000"],
-      ["250 MP, winter quarter", "$176,744", "$21,504–22,377", "$30,975–33,082", "~$229,200–232,200"],
-      ["250 MP, summer quarter", "$167,138", "$21,504–22,377", "$30,975–33,082", "~$219,600–222,600"],
+      ["150 MP, winter quarter", "$237,786", "$21,495–22,353", "$30,805–32,919", "~$290,100–293,100"],
+      ["150 MP, summer quarter", "$224,745", "$21,495–22,353", "$30,805–32,919", "~$277,000–280,000"],
+      ["250 MP, winter quarter", "$176,744", "$21,504–22,377", "$30,961–33,084", "~$229,200–232,200"],
+      ["250 MP, summer quarter", "$167,138", "$21,504–22,377", "$30,961–33,084", "~$219,600–222,600"],
     ],
     [2160, 2160, 2200, 2200, 1640]
   ),
@@ -339,8 +339,8 @@ const children = [
 
   h2("A.2  Cloud to Delivery (10 cm)", TEAL),
   equipmentTable([
-    ["Image conversion — 150 MP", "Converts raw camera files into working images. Cost derived from measured processing time (25–35 s/image) × this project's real total (215,000 images) — not yet a live production bill", "215,000 img / project", "$1,226–1,699 / project (~$409–566/mo)"],
-    ["Image conversion — 250 MP", "Same conversion step on the higher-resolution camera. Per-image time extrapolated (not measured) from the 150→250 MP pixel ratio (1.63×); this project's real total is 37% fewer images, but total pixel volume is within ~2.5% of the 150 MP case, so cost comes out nearly identical", "135,000 img / project", "$1,254–1,744 / project (~$418–581/mo)"],
+    ["Image conversion — 150 MP", "Converts raw camera files into working images. Cost derived from measured processing time (25–35 s/image) × this project's real total (215,000 images) — not yet a live production bill", "215,000 img / project", "$1,218–1,706 / project (~$406–569/mo)"],
+    ["Image conversion — 250 MP", "Same conversion step on the higher-resolution camera. Per-image time extrapolated (not measured) from the 150→250 MP pixel ratio (1.63×); this project's real total is 37% fewer images, but total pixel volume is within ~2.5% of the 150 MP case, so cost comes out nearly identical", "135,000 img / project", "$1,247–1,746 / project (~$416–582/mo)"],
     ["Orthomosaic software license", "Stitches converted images into a seamless map; usage-based, no cap on capacity", "1 / org", "$1,597/mo base + $0.05/processing-hr"],
     ["Orthomosaic & file-finishing compute", "Cloud virtual machines that run the stitching and finishing steps; scale to zero when idle", "usage-based", "~$575/mo"],
     ["Image server", "Publishes finished imagery so it can be viewed and delivered", "1", "~$896/mo"],
@@ -351,8 +351,8 @@ const children = [
   h2("A.3  Cloud to Delivery (7.5 cm)", TEAL),
   body("Only image conversion differs from A.2 above by resolution — the orthomosaic license, compute, image server, gateway, and delivery storage rows are shared, resolution-independent cloud infrastructure and aren't repeated here."),
   equipmentTable([
-    ["Image conversion — 150 MP", "Same conversion step and per-image rate as A.2, applied to this resolution's real image total", "390,630 img / project", "$2,228–3,087 / project (~$743–1,029/mo)"],
-    ["Image conversion — 250 MP", "Same conversion step and per-image rate as A.2, applied to this resolution's real image total", "240,866 img / project", "$2,238–3,112 / project (~$746–1,037/mo)"],
+    ["Image conversion — 150 MP", "Same conversion step and per-image rate as A.2, applied to this resolution's real image total", "390,630 img / project", "$2,213–3,100 / project (~$738–1,033/mo)"],
+    ["Image conversion — 250 MP", "Same conversion step and per-image rate as A.2, applied to this resolution's real image total", "240,866 img / project", "$2,225–3,115 / project (~$742–1,038/mo)"],
   ]),
 
   h2("A.4  Notes on Figures", TEAL),
