@@ -22,7 +22,7 @@ const children = [
 
   h2("Key Notes", NAVY),
   bullet("All figures below are steady-state recurring costs and turnaround times — no one-time build or equipment costs are included."),
-  bullet("The ~$6,830–6,990/month recurring figure is scoped to this project's AOI (collected and delivered quarterly), not total company volume — it is not comparable to whole-company historical billing."),
+  bullet("The ~$6,830–6,990/month recurring figure is scoped to this project's AOI, collected and delivered quarterly."),
   bullet("Cloud figures reflect real, current metered rates; flight-collection figures reflect real internal flight-planning estimates."),
   bullet("Collection time and processing volume are broken out by winter and summer throughout this document — the usable flying window differs by season, so daily collection volume does too, and processing runs alongside collection."),
   bullet("This document currently covers 10 cm resolution only — no 7.5 cm figures exist yet anywhere in it. A matching 7.5 cm block will be added once that resolution's real image-volume totals are available — don't compare figures across the two resolutions until then."),
