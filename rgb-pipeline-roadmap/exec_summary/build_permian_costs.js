@@ -1,6 +1,6 @@
 const {
   NAVY, TEAL, AMBER, MUTED, PageBreak,
-  docTitle, statRow, h1, h2, body, bullet, note,
+  docTitle, statRow, h1, h2, h3sub, body, bullet, note,
   compareTable, equipmentTable, buildDocument, writeDoc,
 } = require("./docx_helpers");
 const { Paragraph } = require("docx");
@@ -16,7 +16,7 @@ const children = [
 
   statRow([
     { number: "~$6,830–6,990/mo", label: "Recurring cloud operating cost", color: NAVY },
-    { number: "~25.3 h", label: "Wheels-up to delivery-ready (150 MP, one sortie)", color: TEAL },
+    { number: "~16.3–27.4 h", label: "Wheels-up to delivery-ready (150 MP, one day, winter–summer range)", color: TEAL },
     { number: "3", label: "Pipeline legs — Collection, FBO, Cloud", color: MUTED },
   ]),
 
@@ -24,6 +24,8 @@ const children = [
   bullet("All figures below are steady-state recurring costs and turnaround times — no one-time build or equipment costs are included."),
   bullet("The ~$6,830–6,990/month recurring figure is scoped to this project's AOI (collected and delivered quarterly), not total company volume — it is not comparable to whole-company historical billing."),
   bullet("Cloud figures reflect real, current metered rates; flight-collection figures reflect real internal flight-planning estimates."),
+  bullet("Collection time and processing volume are broken out by winter and summer throughout this document — the usable flying window differs by season, so daily collection volume does too, and processing runs alongside collection."),
+  bullet("This document currently covers 10 cm resolution. A matching 7.5 cm section will be added once that resolution's image-volume totals are available — don't compare figures across the two resolutions until then."),
 
   new Paragraph({ spacing: { before: 260 }, children: [] }),
 
@@ -40,8 +42,11 @@ const children = [
   ),
   note("*Cloud to Delivery recurring cost includes a derived estimate for image conversion (~$409–566/mo on the 150 MP camera) alongside current metered rates for a shared-tenant workload; see Appendix A.2 and A.3."),
 
+  h2("10 cm Resolution", NAVY),
+  body("Sections 2–5 below cover 10 cm resolution, matching the real image-volume basis (215,000 / 135,000 images) used throughout this document."),
+
   h1("2", "Collection Time & Cost, by Fleet Configuration (10 cm)"),
-  body("Real internal flight-planning estimates at 10 cm resolution — matching the image-volume basis (215,000 / 135,000 images) used throughout this document. This is flight operations cost (aircraft, crew, fuel) to physically collect the AOI — a different cost category from the cloud recurring cost in Section 1. PAS150 = the current 150 MP camera; RS250 = the 250 MP camera discussed throughout this document. A matching 7.5 cm comparison will be added once those image volumes are available — don't compare figures across the two resolutions until then."),
+  body("Real internal flight-planning estimates at 10 cm resolution. This is flight operations cost (aircraft, crew, fuel) to physically collect the AOI — a different cost category from the cloud recurring cost in Section 1. PAS150 = the current 150 MP camera; RS250 = the 250 MP camera discussed throughout this document."),
   compareTable(
     ["Configuration", "Hours", "Winter days", "Summer days", "Winter cost", "Summer cost"],
     [
@@ -57,25 +62,47 @@ const children = [
   ),
   note("At 10 cm, a single RS250 already fits the quarter in both seasons (81 winter days, 48 summer — a 9-day winter margin), unlike at finer resolutions. PAS150 alone still fails winter (107 days) though it clears summer (63 days). The more useful finding: RS250 fleet cost is nearly flat from 1 to 3 aircraft (~$133,500–135,500 winter) — adding a second or third RS250 barely changes total cost, because total flight hours stay roughly the same, just split across more aircraft in parallel. Once RS250 is the chosen camera, fleet size becomes a schedule/margin decision, not a cost one — going from 1 to 2 aircraft roughly doubles collection speed (81→41 winter days) for about 1.4% more cost."),
 
-  h1("3", "Process Time — One Collection Cycle (150 MP vs. 250 MP)"),
-  body("One sortie, one aircraft, one day of flying. 150 MP figures build on real measured data (the 17.24 img/hr mosaic rate is confirmed twice from independent real datasets); the specific end-to-end scenario below — one large sortie split into ~12 parallel tile-builds — is a derivation from those real inputs, not itself a measured run. 250 MP figures are extrapolated from the 150 MP numbers by the 1.63× pixel ratio; that camera has never run through this pipeline."),
-  compareTable(
-    ["Stage", "150 MP", "250 MP"],
-    [
-      ["Collection (flight)", "6 h", "6 h"],
-      ["Aircraft → FBO", "~8 min", "~8 min"],
-      ["Upload to cloud (1 Gbps)", "~1.3–1.4 h (482 GB, measured)", "~0.3–0.6 h (110–215 GB)"],
-      ["Image conversion (parallel)", "~2 h", "~2 h (extrapolated)"],
-      ["Mosaic (parallel, ~12 tile-builds)", "~15.3 h (measured rate)", "~17.2 h (extrapolated)"],
-      ["GDAL merge/trim/COG (parallel)", "~0.5 h", "~0.5 h (extrapolated)"],
-      ["Publish to image server", "minutes", "minutes"],
-      ["Total, wheels-up → delivery-ready", "~25.3 h", "~26.1 h"],
-    ],
-    [3760, 2800, 2800]
-  ),
-  note("Neither camera reaches same-calendar-day delivery — both land at roughly next-day. Mosaic processing, not the cloud/network steps this document otherwise focuses on, is the bottleneck (~60% of total time either way). The 250 MP camera's faster upload doesn't improve end-to-end time because mosaic time tracks total pixels processed, not file size — 250 MP is marginally slower overall despite cutting transport volume 55–75%."),
+  h1("3", "Process Time — One Collection Day, Winter vs. Summer (150 MP vs. 250 MP)"),
+  body("One aircraft, one day of flying, using the 1× PAS150 and 1× RS250 rows from Section 2. Winter and summer fly different average hours/day (425 h ÷ 107 winter days ≈ 4.0 h vs. 425 h ÷ 63 summer days ≈ 6.7 h for the 150 MP camera; 321 h ÷ 81 and ÷ 48 for the 250 MP camera, both also ≈ 4.0 h / 6.7 h) — real figures from Section 2, not independently measured. Because processing runs alongside collection, a day's processing load tracks what that day collected: each downstream stage below is scaled from the real measured single-sortie baseline (3,171 images, 482 GB, 150 MP) by the ratio of that season's average daily image count to the baseline — not independently measured for winter or summer specifically. 250 MP figures additionally carry the 1.63× pixel-ratio extrapolation already used throughout this document."),
 
-  h1("4", "Whole-Project Volume Comparison (150 MP vs. 250 MP)"),
+  h3sub("150 MP"),
+  compareTable(
+    ["Stage", "Winter", "Summer"],
+    [
+      ["Collection (flight)", "~4.0 h", "~6.7 h"],
+      ["Aircraft → FBO", "~8 min", "~8 min"],
+      ["Images collected that day", "~2,010", "~3,410"],
+      ["Upload to cloud (1 Gbps)", "~0.8–0.9 h (~306 GB)", "~1.4–1.5 h (~518 GB)"],
+      ["Image conversion (parallel)", "~1.3 h", "~2.2 h"],
+      ["Mosaic (parallel)", "~9.7 h", "~16.5 h"],
+      ["GDAL merge/trim/COG (parallel)", "~0.3 h", "~0.5 h"],
+      ["Publish to image server", "minutes", "minutes"],
+      ["Total, wheels-up → delivery-ready", "~16.3 h", "~27.4 h"],
+    ],
+    [3200, 3080, 3080]
+  ),
+
+  h3sub("250 MP"),
+  compareTable(
+    ["Stage", "Winter", "Summer"],
+    [
+      ["Collection (flight)", "~4.0 h", "~6.7 h"],
+      ["Aircraft → FBO", "~8 min", "~8 min"],
+      ["Images collected that day", "~1,670", "~2,810"],
+      ["Upload to cloud (1 Gbps)", "~0.3–0.5 h (~94–185 GB)", "~0.4–0.9 h (~159–311 GB)"],
+      ["Image conversion (parallel)", "~1.7 h", "~2.9 h"],
+      ["Mosaic (parallel)", "~14.8 h", "~24.9 h"],
+      ["GDAL merge/trim/COG (parallel)", "~0.4 h", "~0.7 h"],
+      ["Publish to image server", "minutes", "minutes"],
+      ["Total, wheels-up → delivery-ready", "~21.5 h", "~35.9 h"],
+    ],
+    [3200, 3080, 3080]
+  ),
+  note("None of the four combinations reach same-calendar-day delivery. Summer's longer flying window means more images collected per day, so summer's processing backlog runs longer than winter's despite the same 22-VM parallel capacity — this is the same pixels-not-files effect already noted for the 150 vs. 250 MP comparison, now also running across seasons. Mosaic remains the bottleneck in every case (~55–60% of total time)."),
+
+  h1("4", "Volume Comparison — Whole Project and Daily (150 MP vs. 250 MP)"),
+  body("Whole-project totals are fixed regardless of season — the same AOI needs the same total images either way. Daily volume varies by season because the usable flying window does (Section 2); since processing runs alongside collection, the volume processed on any given day tracks what was collected that day."),
+  h3sub("Whole project"),
   compareTable(
     ["", "150 MP", "250 MP"],
     [
@@ -87,8 +114,29 @@ const children = [
   ),
   note("Despite 135,000 images being 37% fewer than 215,000, total conversion cost comes out nearly identical (within ~2.5%) — because total pixel volume, which is what compute cost tracks, is almost the same either way. The 250 MP camera trades file count for per-file size; it doesn't reduce processing cost."),
 
+  h3sub("Daily volume, by season"),
+  compareTable(
+    ["150 MP", "Winter", "Summer"],
+    [
+      ["Images/day", "~2,010", "~3,410"],
+      ["Data/day", "~306 GB", "~518 GB"],
+      ["Image-conversion cost/day", "~$11–16", "~$19–27"],
+    ],
+    [3200, 3080, 3080]
+  ),
+  compareTable(
+    ["250 MP", "Winter", "Summer"],
+    [
+      ["Images/day", "~1,670", "~2,810"],
+      ["Data/day", "~94–185 GB", "~159–311 GB"],
+      ["Image-conversion cost/day", "~$16–22", "~$26–36"],
+    ],
+    [3200, 3080, 3080]
+  ),
+  note("Daily figures are derived by dividing each camera's real whole-project total (215,000 / 135,000 images) by its real winter/summer day count from Section 2 — not independently measured day by day."),
+
   h1("5", "Whole-AOI Batch Processing Time (22 parallel VMs)"),
-  body("A different question from the per-sortie turnaround above: if the entire AOI had to be mosaic-processed as one batch — e.g. catching up a backlog — how long would it take running the demonstrated 22-VM burst capacity flat out? Modeled using a real measured build as the throughput unit: cpd26-22-d6, 430 images in 23.92 hours (17.98 img/hr), the largest single real build on record. 150 MP uses that time as-is; 250 MP scales it by the same 1.63× pixel ratio used throughout this document — not independently measured."),
+  body("A different question from the daily turnaround above: if the entire AOI had to be mosaic-processed as one batch — e.g. catching up a backlog — how long would it take running the demonstrated 22-VM burst capacity flat out? Modeled using a real measured build as the throughput unit: cpd26-22-d6, 430 images in 23.92 hours (17.98 img/hr), the largest single real build on record. 150 MP uses that time as-is; 250 MP scales it by the same 1.63× pixel ratio used throughout this document — not independently measured."),
   compareTable(
     ["", "150 MP", "250 MP"],
     [
@@ -100,12 +148,16 @@ const children = [
     ],
     [3760, 2800, 2800]
   ),
-  note("250 MP again comes out slightly slower overall (~24.4 vs. ~22.9 days) despite 37% fewer images, for the same reason as the per-sortie comparison: processing time tracks total pixels, not file count. A smoother cross-check using total compute-hours instead of discrete 22-wide waves gives ~22.6 days (150 MP) and ~23.2 days (250 MP) — the gap to the wave-based figures above is the wall-clock cost of each scenario's last, partial wave running under a full VM pool."),
+  note("250 MP again comes out slightly slower overall (~24.4 vs. ~22.9 days) despite 37% fewer images, for the same reason as the daily comparison: processing time tracks total pixels, not file count. A smoother cross-check using total compute-hours instead of discrete 22-wide waves gives ~22.6 days (150 MP) and ~23.2 days (250 MP) — the gap to the wave-based figures above is the wall-clock cost of each scenario's last, partial wave running under a full VM pool."),
+  note("This figure doesn't vary by season — it's a fixed-volume, whole-AOI catch-up scenario, and total project volume (215,000 / 135,000 images) doesn't change with when it was collected. Season affects how long collection itself takes (Section 2) and how the daily processing load varies (Sections 3–4), not this total-reprocessing figure."),
+
+  note("A matching 7.5 cm Resolution section (Sections 2–5) will be added once that resolution's image-volume totals are available."),
 
   h1("6", "Key Assumptions & Risks"),
   bullet("Planning basis: this project's AOI, collected and delivered quarterly, at 1 sortie/day, 1 aircraft, ~480 GB/sortie on the 150 MP camera — measured from a real project sortie, not estimated"),
   bullet("One-time build/equipment costs are out of scope for this document — only steady-state recurring costs are covered"),
   bullet("Cloud figures reflect real, current metered rates for the existing pipeline; delivery storage is a shared account also used by other projects, not isolated to this pipeline"),
+  bullet("Winter/summer daily figures in Sections 3–4 are derived by scaling real whole-project and single-sortie baselines by real seasonal day counts — they are not independently measured winter and summer sorties"),
 
   new Paragraph({ children: [new PageBreak()] }),
   h1("A", "Appendix — Recurring Cost Detail"),
