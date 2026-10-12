@@ -12,8 +12,10 @@ class JsonlStore:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
 
     def save(self, job):
-        with self._lock, open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(job, default=str) + "\n")
+        with self._lock:
+            os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)   # the folder may have been deleted since startup
+            with open(self.path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(job, default=str) + "\n")
 
     def recent(self, limit=25):
         if not os.path.exists(self.path):

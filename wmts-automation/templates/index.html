@@ -223,6 +223,8 @@ function renderResult(job) {
   box.append(el("strong", c.failed ? (c.done || c.skipped ? "Finished with problems. " : "Nothing was added. ") : "Done. "),
              el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
   const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
+  if (job.error) box.append(el("p", job.error, "prob"));
+  if (job.history_error) box.append(el("p", "Note: the history could not be saved (" + job.history_error + "). The adds themselves were not affected.", "hint"));
   if (c.done || c.skipped) api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
     const urls = el("div"); urls.append(el("h2", "Service URLs"));
     urls.append(urlRow("WMS capabilities URL", s.wms_url, s.service_type === "wms" ? "Live render on every request (no tile cache)." : "The same service also answers WMS (live render)."));

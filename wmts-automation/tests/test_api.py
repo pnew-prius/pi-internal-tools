@@ -290,3 +290,55 @@ def test_remove_needs_json_and_a_signed_in_user(client):
     c, *_ = client
     assert c.post("/api/remove", json={"workspace": "TESTWS", "group": "Svc", "confirm": "Svc"}).status_code == 401
     assert c.post("/api/remove", data="x=1", headers=H).status_code == 415
+
+
+# ---------------------------------------------------------------- regressions: "only 1 of 10 COGs was added"
+THREE = "Cust/proj/t-01-RGB.tif\nCust/proj/t-02-RGB.tif\nCust/proj/t-03-RGB.tif"
+
+
+def _mgr_client(fake, monkeypatch, store):
+    monkeypatch.setattr(app_mod, "call", fake.call)
+    monkeypatch.delenv("WMTS_LOCAL", raising=False)
+    mgr = JobManager(store)
+    return app_mod.create_app(mgr).test_client(), mgr
+
+
+def test_deleting_the_history_folder_while_running_does_not_stop_a_batch(fake, monkeypatch, tmp_path):
+    import shutil
+    store = JsonlStore(str(tmp_path / "data" / "history.jsonl"))
+    c, mgr = _mgr_client(fake, monkeypatch, store)
+    shutil.rmtree(tmp_path / "data")                                     # exactly what happened: folder gone after startup
+    j = wait(c, post(c, dict(BODY, blob_text=THREE)).get_json()["job"]["id"])
+    assert j["status"] == "done" and j["counts"] == {"total": 3, "done": 3, "skipped": 0, "failed": 0}
+    assert len(store.recent()) == 3                                      # and the history folder was recreated
+
+
+def test_a_history_write_failure_never_stops_or_fails_an_add(fake, monkeypatch, tmp_path):
+    class Broken(JsonlStore):
+        def save(self, job):
+            raise OSError("disk is full")
+    c, mgr = _mgr_client(fake, monkeypatch, Broken(str(tmp_path / "h.jsonl")))
+    j = wait(c, post(c, dict(BODY, blob_text=THREE)).get_json()["job"]["id"])
+    assert j["status"] == "done" and j["counts"]["done"] == 3 and "disk is full" in j["history_error"]
+
+
+def test_an_unexpected_crash_marks_the_unrun_cogs_failed_never_done(fake, monkeypatch, tmp_path):
+    import add_cog as ac
+
+    class Crash(BaseException):
+        pass
+    real = ac.add_cog
+    seen = []
+
+    def add_then_crash(env, ws, group, tile, *a, **k):
+        seen.append(tile)
+        if len(seen) == 2:
+            raise Crash("worker died")
+        return real(env, ws, group, tile, *a, **k)
+    monkeypatch.setattr(ac, "add_cog", add_then_crash)
+    c, mgr = _mgr_client(fake, monkeypatch, JsonlStore(str(tmp_path / "h.jsonl")))
+    j = wait(c, post(c, dict(BODY, blob_text=THREE)).get_json()["job"]["id"])
+    assert j["status"] == "partial" and j["counts"] == {"total": 3, "done": 1, "skipped": 0, "failed": 2}
+    assert [i["status"] for i in j["items"]] == ["done", "failed", "failed"]
+    assert all("Not run" in i["error"] for i in j["items"][1:]) and "stopped unexpectedly" in j["error"]
+    assert post(c, dict(BODY, blob_text=ONE)).status_code == 202            # the service lock was released

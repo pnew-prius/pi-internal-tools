@@ -82,7 +82,7 @@ class JobManager:
             with self._lock:
                 self._active.discard((job["env"], job["workspace"], job["group"]))
             job["current"] = None
-            self._record(job, item)
+            self._safe_record(job, item)
             job["status"] = final
 
     @staticmethod
@@ -101,9 +101,18 @@ class JobManager:
                          "started": item.get("started"), "finished": item.get("finished"), "seconds": item["seconds"],
                          "batch_size": job["counts"]["total"]})
 
+    def _safe_record(self, job, item):
+        """Saving history is best effort: it must never stop or fail an add."""
+        try:
+            self._record(job, item)
+        except Exception as e:
+            job["history_error"] = f"{type(e).__name__}: {e}"[:200]
+            print(f"[jobs] could not save history for {job['id']}: {job['history_error']}", flush=True)
+
     def _run(self, job, create_workspace):
         job["status"] = "running"
         job["started"] = time.time()
+        stopped = None
         try:
             for item in job["items"]:
                 job["current"] = item["index"]
@@ -128,12 +137,24 @@ class JobManager:
                     for s in item["steps"]:
                         if s["status"] == "running":
                             s["status"] = "failed"
-                finally:
-                    item["finished"] = time.time()
-                    item["seconds"] = round(item["finished"] - item["started"], 1)
-                    self._record(job, item)
+                item["finished"] = time.time()
+                item["seconds"] = round(item["finished"] - item["started"], 1)
+                self._safe_record(job, item)
                 create_workspace = False  # the first COG created it (or it already existed)
+        except BaseException as e:  # anything unexpected: stop, but never report COGs that did not run as done
+            stopped = f"{type(e).__name__}: {e}"[:300]
+            job["error"] = f"The job stopped unexpectedly: {stopped}"
         finally:
+            for item in job["items"]:
+                if item["status"] in ("pending", "running"):
+                    item["status"] = "failed"
+                    item["error"] = f"Not run: the job stopped unexpectedly ({stopped or 'unknown reason'}). Run it again."
+                    for s in item["steps"]:
+                        if s["status"] == "running":
+                            s["status"] = "failed"
+                    job["counts"]["failed"] += 1
+                    item["finished"] = time.time()
+                    self._safe_record(job, item)
             c = job["counts"]
             job["finished"] = time.time()
             with self._lock:

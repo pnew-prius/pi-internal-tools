@@ -18,7 +18,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 87 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 90 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -73,6 +73,7 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 9. `az storage blob list` silently caps at 5,000 unless `--num-results` is raised. Tiles are keyed in blob by the group's internal ID.
 
 ## Open items
+- Fixed 2026-10-13 (found by a user's 10-COG batch that stopped after 1 while reporting 'Done'): a history-save failure (deleted `data/` folder) aborted the whole batch, and COGs that never ran were reported as done. Now history is best-effort (folder recreated on save, failures noted but never fatal) and any COG that did not run is marked FAILED ('Not run') so the job can never claim success it did not have. Regression tests reproduce both.
 - **Removing a service**: deleting a workspace/group in GeoServer does NOT delete its cached tiles (verified: 28k orphan tiles stayed in `pigeoserverprod/tilecache`). `remove_service.py` truncates first (verified live: 0 tiles left). It is not wired into the UI yet.
 - **Concurrent writers** (two App Service instances): GeoServer has no compare-and-swap; `put_member_in_group` re-reads, retries a lost creation race as an update and verifies membership/bounds afterwards, and `sync_tile_extent` re-widens the tile extent. Verified live with two simultaneous adds. For stronger guarantees use ONE instance/worker, or add a blob-lease lock on a small dedicated storage account (which the app also needs for durable history).
 - **Linux parity untested** (no WSL/Docker here). The workflow file runs the unit suite and imports `wsgi` on ubuntu as soon as the repo is pushed; the real check is the first deploy.
