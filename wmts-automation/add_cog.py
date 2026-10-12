@@ -40,9 +40,15 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
     time.sleep(settle_sec)
     deleted = []
     for _ in range(2):  # second pass catches entries created while the first pass ran
+        # Never touch other services: a workspace can hold several layer groups, each with its own tile layer.
+        c, g = call(env, "GET", f"/rest/workspaces/{ws}/layergroups.json")
+        lg = g.get("layerGroups") if isinstance(g, dict) else None
+        if c != 200 or lg is None:
+            raise RuntimeError(f"cannot list layer groups for {ws} (HTTP {c}); refusing to sweep tile layers blindly")
+        groups = {x["name"] for x in lg["layerGroup"]} if isinstance(lg, dict) else set()
         r = call(env, "GET", "/gwc/rest/layers.json")[1]
         names = [x if isinstance(x, str) else x.get("name") for x in (r if isinstance(r, list) else [])]
-        stray = [n for n in names if n and n.startswith(f"{ws}:") and n != f"{ws}:{group}"]
+        stray = [n for n in names if n and n.startswith(f"{ws}:") and n.split(":", 1)[1] not in groups]
         for n in stray:
             call(env, "DELETE", f"/gwc/rest/layers/{n}.json")
             deleted.append(n)
@@ -52,8 +58,10 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
     return deleted
 
 
-def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False):
+def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False, refresh=False):
     """blob_path: path inside the sourceimagery container, e.g. 'Customer/project/tile-RGB.tif'.
+    A COG already in the group is skipped, unless refresh=True: then its extent/truncate/seed are redone (repairs a failed add
+    or picks up a replaced file).
     progress(step, status, seconds=None, detail=None) is called as each step starts ('running') and ends ('done').
     Returns a metrics dict."""
     L = f"{ws}:{group}"
@@ -83,7 +91,8 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
     done("workspace", "created" if m.get("workspace_created") else "exists")
 
     state = group_state(env, ws, group)
-    if state and tile in state[1]:
+    already = bool(state and tile in state[1])
+    if already and not refresh:
         m["skipped"] = "already a member"
         return m
 
@@ -110,7 +119,16 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
 
     # 2. add to the group; GeoServer does NOT recompute bounds, so set them = union(existing, footprint) in EPSG:3857
     start("group_update")
-    if state is None:
+    if already:  # refresh: membership is unchanged; make sure the bounds still cover this COG
+        g, members = state
+        b = g["bounds"]
+        bounds = [min(b["minx"], fp[0]), min(b["miny"], fp[1]), max(b["maxx"], fp[2]), max(b["maxy"], fp[3])]
+        if bounds != [b["minx"], b["miny"], b["maxx"], b["maxy"]]:
+            g["bounds"] = {"minx": bounds[0], "miny": bounds[1], "maxx": bounds[2], "maxy": bounds[3],
+                           "crs": {"@class": "projected", "$": "EPSG:3857"}}
+            call(env, "PUT", f"/rest/workspaces/{ws}/layergroups/{group}", {"layerGroup": g})
+        m["group_action"], ok = "refreshed (already a member)", True
+    elif state is None:
         bounds = fp
         body = {"layerGroup": {"name": group, "title": group, "mode": "SINGLE", "workspace": {"name": ws},
                                "publishables": {"published": [{"@type": "layer", "name": f"{ws}:{tile}"}]},
@@ -131,7 +149,7 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
         ok, m["group_action"] = c == 200, f"updated ({len(members)}->{len(members) + 1} members)"
     if not ok:
         raise RuntimeError(f"group {m['group_action']} failed {c} {str(r)[:200]}")
-    m["members_after"] = (len(state[1]) if state else 0) + 1
+    m["members_after"] = len(state[1]) if already else (len(state[1]) if state else 0) + 1
     m["group_bounds_3857"] = bounds
     done("group_update", m["group_action"])
 

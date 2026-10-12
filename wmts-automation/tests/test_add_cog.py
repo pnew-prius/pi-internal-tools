@@ -74,6 +74,30 @@ def test_progress_callback_reports_every_step_in_order(fake):
 
 
 def test_reconcile_removes_only_stray_layers_in_that_workspace(fake):
-    fake.gwc.update({f"{WS}:{G}": "x", f"{WS}:stray": "x", "OTHER:keep": "x"})
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    fake.gwc.update({f"{WS}:stray": "x", "OTHER:keep": "x"})
     assert reconcile_stray_tile_layers("dev", WS, G, settle_sec=0) == [f"{WS}:stray"]
     assert "OTHER:keep" in fake.gwc and f"{WS}:{G}" in fake.gwc
+
+
+def test_reconcile_never_deletes_another_service_in_the_same_workspace(fake):
+    """Regression (found live): a workspace can hold several layer groups; their tile layers must survive."""
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "ServiceA", "t-01", "Cust/proj/t-01-RGB.tif")
+    add_cog("dev", WS, "ServiceB", "t-02", "Cust/proj/t-02-RGB.tif")
+    assert f"{WS}:ServiceA" in fake.gwc and f"{WS}:ServiceB" in fake.gwc
+    assert [k for k in fake.gwc if k.startswith(WS + ":")] == [f"{WS}:ServiceA", f"{WS}:ServiceB"]
+
+
+def test_reconcile_refuses_to_sweep_if_it_cannot_list_groups(fake, monkeypatch):
+    fake.workspaces.add(WS)
+    real = fake.call
+    monkeypatch.setattr(add_cog_mod_for_test(), "call", lambda env, m, path, *a, **k: (500, "boom") if path.endswith("/layergroups.json") else real(env, m, path, *a, **k))
+    with pytest.raises(RuntimeError, match="refusing to sweep"):
+        reconcile_stray_tile_layers("dev", WS, G, settle_sec=0)
+
+
+def add_cog_mod_for_test():
+    import add_cog
+    return add_cog

@@ -17,8 +17,16 @@
   h2 { margin:0 0 14px; font-size:15px; color:var(--teal); text-transform:uppercase; letter-spacing:1px; }
   label { display:block; font-size:13px; font-weight:600; margin:0 0 4px; }
   .hint { font-size:12px; color:#595959; margin:4px 0 0; }
-  input[type=text], select { width:100%; padding:9px 10px; font:inherit; border:1px solid #b7c4be; border-radius:6px; background:#fff; }
-  input:focus, select:focus, button:focus-visible { outline:3px solid #8cc9b6; outline-offset:1px; }
+  input[type=text], select, textarea { width:100%; padding:9px 10px; font:inherit; border:1px solid #b7c4be; border-radius:6px; background:#fff; }
+  textarea { font-family:Consolas,monospace; font-size:13px; resize:vertical; }
+  .prob { color:#7a2a12; } .prob b { color:var(--rust); }
+  .bar { height:8px; background:var(--mint); border-radius:4px; overflow:hidden; margin:6px 0 12px; } .bar > div { height:100%; background:var(--teal); width:0; transition:width .3s; }
+  ul.items { list-style:none; margin:0 0 12px; padding:0; display:grid; gap:4px; max-height:260px; overflow:auto; }
+  ul.items li { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
+  ul.items li.running { border-color:var(--amber); background:#fffaf0; }
+  ul.items .msg { font-size:12px; color:#7a2a12; grid-column:2 / -1; }
+  button.link { background:none; color:var(--teal); padding:0; text-decoration:underline; font-weight:600; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline:3px solid #8cc9b6; outline-offset:1px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
   .full { grid-column:1/-1; }
   .row { display:flex; align-items:center; gap:10px; margin-top:6px; }
@@ -71,13 +79,15 @@
         <p class="hint" id="svcinfo">Pick an existing service or type a new name.</p>
       </div>
       <div class="full">
-        <label for="blob">COG blob path</label>
-        <input type="text" id="blob" required placeholder="Customer/project-season/tile-RGB.tif  (or paste the full blob URL)">
-        <p class="hint">Path inside <code>pigeoserverprod/sourceimagery</code>. The layer is named from the file name without <code>-RGB</code>.</p>
+        <label for="blob">COG blob paths <span style="font-weight:400">(one per line; one is fine)</span></label>
+        <textarea id="blob" rows="5" required spellcheck="false" placeholder="Customer/project-season/tile-01-RGB.tif&#10;Customer/project-season/tile-02-RGB.tif&#10;(or paste full blob URLs)"></textarea>
+        <p class="hint">Paths inside <code>pigeoserverprod/sourceimagery</code>. Each layer is named from the file name without <code>-RGB</code>. COGs are added one at a time, in this order; a failure does not stop the rest.</p>
+        <div id="preview" class="hint" aria-live="polite"></div>
       </div>
       <div class="full">
         <div class="row"><input type="checkbox" id="mkws"><label for="mkws" style="margin:0;font-weight:400">Create the workspace if it doesn't exist</label></div>
-        <div class="row"><button id="go" type="submit">Add COG</button><span class="hint" id="note"></span></div>
+        <div class="row"><input type="checkbox" id="refresh"><label for="refresh" style="margin:0;font-weight:400">Refresh COGs already in the service (re-seed them; otherwise they are skipped)</label></div>
+        <div class="row"><button id="go" type="submit" disabled>Add COGs</button><span class="hint" id="note"></span></div>
         <div class="error" id="err" role="alert"></div>
       </div>
     </form>
@@ -85,6 +95,10 @@
 
   <section id="progress" aria-live="polite" style="display:none">
     <h2>Progress <span id="jobtitle" style="text-transform:none;letter-spacing:0;font-weight:400;color:#595959"></span></h2>
+    <div id="overall" style="font-size:14px"></div>
+    <div class="bar"><div id="barfill"></div></div>
+    <ul class="items" id="items"></ul>
+    <div class="hint" id="stephdr"></div>
     <ol class="steps" id="steps"></ol>
     <div class="ok" id="result"></div>
   </section>
@@ -122,60 +136,107 @@ async function showService() {
   } catch (e) { $("svcinfo").textContent = ""; }
 }
 
-function renderSteps(job) {
-  $("steps").replaceChildren(...job.steps.map(s => {
+function renderStepList(item) {
+  $("steps").replaceChildren(...item.steps.map(s => {
     const li = el("li", undefined, s.status);
     li.append(el("span", undefined, "dot"), el("span", LABELS[s.name] + (s.detail ? " - " + s.detail : "")),
               el("span", s.seconds != null ? s.seconds.toFixed(1) + " s" : (s.status === "skipped" ? "skipped" : ""), "secs"));
     return li;
   }));
 }
+function renderJob(job) {
+  const c = job.counts, finished = c.done + c.skipped + c.failed;
+  $("overall").textContent = (job.status === "running" || job.status === "queued")
+    ? "Adding " + Math.min(finished + 1, c.total) + " of " + c.total + " - " + c.done + " added, " + c.skipped + " skipped, " + c.failed + " failed"
+    : c.done + " added, " + c.skipped + " skipped, " + c.failed + " failed (of " + c.total + ")";
+  $("barfill").style.width = (100 * finished / c.total) + "%";
+  $("items").replaceChildren(...job.items.map(it => {
+    const li = el("li", undefined, it.status);
+    const dot = el("span", undefined, "dot"); dot.style.width = dot.style.height = "14px";
+    li.append(dot, el("span", it.tile), el("span", it.status === "pending" ? "" : (it.seconds != null ? it.seconds.toFixed(0) + " s - " + it.status : it.status), "secs"));
+    if (it.error) li.append(el("span", it.error, "msg"));
+    return li;
+  }));
+  const cur = job.items.find(i => i.status === "running") || job.items[Math.max(0, finished - 1)];
+  if (cur) { $("stephdr").textContent = "Steps for " + cur.tile; renderStepList(cur); }
+}
 function renderResult(job) {
-  const box = $("result"); box.replaceChildren();
-  if (job.status === "done") {
-    const r = job.result || {};
-    box.style.display = "block";
-    if (r.skipped) { box.append(el("div", "Nothing to do: this COG is already in the service.")); return; }
-    box.append(el("strong", "Done in " + (r.total_sec || 0).toFixed(1) + " s. "), el("span", (r.group_action || "") + ", " + (r.members_after || "?") + " COGs in the service, " + (r.tiles_job_total || 0) + " tiles processed."));
-    const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group));
-    box.append(p);
-    api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
-      const a = el("a", s.capabilities_url); a.href = s.capabilities_url; a.target = "_blank"; a.rel = "noopener";
-      const q = el("p"); q.append("WMTS capabilities URL: ", a); box.append(q);
-    }).catch(() => {});
-  } else if (job.status === "failed") {
-    $("err").textContent = "Failed: " + job.error + " Nothing is lost: fix the cause and run the same add again."; $("err").style.display = "block";
-    box.style.display = "none";
+  const box = $("result"); box.replaceChildren(); box.style.display = "block";
+  const c = job.counts;
+  box.append(el("strong", c.failed ? (c.done || c.skipped ? "Finished with problems. " : "Nothing was added. ") : "Done. "),
+             el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
+  const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
+  if (c.done) api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
+    const a = el("a", s.capabilities_url); a.href = s.capabilities_url; a.target = "_blank"; a.rel = "noopener";
+    const q = el("p"); q.append("WMTS capabilities URL: ", a); box.append(q);
+  }).catch(() => {});
+  if (c.failed) {
+    const failed = job.items.filter(i => i.status === "failed");
+    const btn = el("button", "Put the " + failed.length + " failed COG(s) back in the box", "link"); btn.type = "button";
+    btn.onclick = () => { $("blob").value = failed.map(i => i.blob_path).join(String.fromCharCode(10)); validateBox(); window.scrollTo(0, 0); };
+    const q = el("p"); q.append(btn); box.append(q);
+    box.append(el("p", "Failures leave nothing half-built. Fix the cause (usually the path) and run those again.", "hint"));
   }
 }
 async function poll(id) {
   try {
     const { job } = await api("/api/jobs/" + id);
-    renderSteps(job);
-    if (job.status === "done" || job.status === "failed") { clearInterval(timer); $("go").disabled = false; renderResult(job); loadHistory(); }
-  } catch (e) { clearInterval(timer); $("go").disabled = false; $("err").textContent = e.message; $("err").style.display = "block"; }
+    renderJob(job);
+    if (["done", "partial", "failed"].includes(job.status)) { clearInterval(timer); running = false; syncButton($("go").textContent); renderResult(job); loadHistory(); }
+  } catch (e) { clearInterval(timer); running = false; syncButton($("go").textContent); $("err").textContent = e.message; $("err").style.display = "block"; }
 }
 async function loadHistory() {
   try {
-    const { jobs } = await api("/api/jobs");
-    $("history").replaceChildren(...jobs.map(j => {
-      const tr = el("tr"); const d = new Date((j.created || 0) * 1000);
-      const dur = j.finished && j.started ? (j.finished - j.started).toFixed(0) + " s" : "";
+    const { jobs, running } = await api("/api/jobs");
+    const rows = [];
+    (running || []).forEach(r => {
+      const tr = el("tr"), st = el("td"); st.append(el("span", r.status, "pill"));
+      tr.append(el("td", "now"), el("td", r.user), el("td", r.workspace + ":" + r.group), el("td", "batch of " + r.counts.total), st, el("td", ""));
+      rows.push(tr);
+    });
+    jobs.forEach(j => {
+      const tr = el("tr"), d = new Date((j.finished || j.created || 0) * 1000);
       const st = el("td"); st.append(el("span", j.status, "pill" + (j.status === "failed" ? " failed" : "")));
-      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group), el("td", j.tile), st, el("td", dur));
-      return tr;
-    }));
+      const tile = el("td", j.tile); if (j.error) tile.title = j.error;
+      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group), tile, st, el("td", j.seconds != null ? j.seconds.toFixed(0) + " s" : ""));
+      rows.push(tr);
+    });
+    $("history").replaceChildren(...rows);
   } catch (e) {}
 }
+let vtimer = null, boxOk = false, running = false;
+function syncButton(label) { $("go").textContent = label; $("go").disabled = running || !boxOk; }
+async function validateBox() {
+  const text = $("blob").value;
+  if (!text.trim()) { $("preview").replaceChildren(); boxOk = false; syncButton("Add COGs"); return; }
+  try {
+    const r = await api("/api/validate", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ blob_text: text }) });
+    const pv = $("preview"); pv.replaceChildren();
+    if (r.errors.length) {
+      boxOk = false;
+      r.errors.slice(0, 8).forEach(e => { const d = el("div", undefined, "prob"); d.append(el("b", e.line ? "Line " + e.line + ": " : ""), e.error + (e.text ? "  [" + e.text + "]" : "")); pv.append(d); });
+      if (r.errors.length > 8) pv.append(el("div", "... and " + (r.errors.length - 8) + " more problem(s).", "prob"));
+    } else {
+      boxOk = true;
+      const names = r.items.map(i => i.tile);
+      pv.append(el("div", r.items.length + " COG(s) will be added in this order: " + (names.length > 6 ? names.slice(0, 3).join(", ") + " ... " + names.slice(-2).join(", ") : names.join(", "))));
+    }
+    syncButton(!boxOk ? "Fix the problems above" : (r.items.length > 1 ? "Add " + r.items.length + " COGs" : "Add COG"));
+  } catch (e) { boxOk = false; syncButton("Add COGs"); }
+}
+$("blob").addEventListener("input", () => { clearTimeout(vtimer); vtimer = setTimeout(validateBox, 350); });
 $("form").addEventListener("submit", async (ev) => {
-  ev.preventDefault(); $("err").style.display = "none"; $("result").style.display = "none"; $("go").disabled = true;
+  ev.preventDefault(); $("err").style.display = "none"; $("result").style.display = "none";
+  await validateBox();
+  if (!boxOk) { $("err").textContent = "Fix the problems listed under the COG box first. Nothing was started."; $("err").style.display = "block"; return; }
+  running = true; syncButton($("go").textContent);
   try {
     const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
-                             blob_path: $("blob").value, create_workspace: $("mkws").checked }) });
-    $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.tile + " into " + job.workspace + ":" + job.group;
-    renderSteps(job); timer = setInterval(() => poll(job.id), 1000);
-  } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; $("go").disabled = false; }
+                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked }) });
+    $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.counts.total + " COG(s) into " + job.workspace + ":" + job.group;
+    renderJob(job); timer = setInterval(() => poll(job.id), 1000);
+  } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }
 });
 $("env").addEventListener("change", loadWorkspaces);
 $("workspace").addEventListener("change", () => { loadGroups(); showService(); });

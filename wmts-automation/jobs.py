@@ -1,4 +1,6 @@
-"""Background job manager: one add-COG job at a time per service (group updates are not safe to run concurrently)."""
+"""Background batch runner. A job = an ordered list of COGs added ONE AT A TIME with the same steps each time.
+One job per service at a time (group updates are not safe to run concurrently). A failed COG does not stop the
+rest ("carry on"): the job ends 'done' (all ok), 'partial' (some failed) or 'failed' (all failed)."""
 import threading
 import time
 import uuid
@@ -11,6 +13,10 @@ class Busy(RuntimeError):
     pass
 
 
+def _blank_steps():
+    return [{"name": n, "status": "pending", "seconds": None, "detail": None} for n in STEPS]
+
+
 class JobManager:
     def __init__(self, store):
         self.store = store
@@ -18,52 +24,77 @@ class JobManager:
         self._active = set()
         self._lock = threading.Lock()
 
-    def submit(self, user, env, workspace, group, tile, blob_path, create_workspace=False, run=True):
+    def submit(self, user, env, workspace, group, items, create_workspace=False, refresh=False, run=True):
+        """items: [{'tile':..., 'path':...}, ...] in the order to add them."""
         key = (env, workspace, group)
         with self._lock:
             if key in self._active:
                 raise Busy(f"Another add is already running for {workspace}:{group}. Wait for it to finish.")
             self._active.add(key)
             job = {"id": uuid.uuid4().hex[:12], "user": user, "env": env, "workspace": workspace, "group": group,
-                   "tile": tile, "blob_path": blob_path, "status": "queued", "created": time.time(),
-                   "steps": [{"name": n, "status": "pending", "seconds": None, "detail": None} for n in STEPS],
-                   "result": None, "error": None}
+                   "status": "queued", "created": time.time(), "refresh": refresh, "current": None,
+                   "items": [{"index": i, "tile": it["tile"], "blob_path": it["path"], "status": "pending", "steps": _blank_steps(),
+                              "result": None, "error": None, "seconds": None} for i, it in enumerate(items)],
+                   "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}}
             self.jobs[job["id"]] = job
         if run:
             threading.Thread(target=self._run, args=(job, create_workspace), daemon=True).start()
         return job
 
-    def _progress(self, job):
+    @staticmethod
+    def _progress(item):
         def cb(step, status, seconds=None, detail=None):
-            for s in job["steps"]:
+            for s in item["steps"]:
                 if s["name"] == step:
                     s.update(status=status, seconds=seconds, detail=detail)
         return cb
 
+    def _record(self, job, item):
+        """One history row per COG, saved as soon as that COG finishes (a crash mid-batch keeps what was done)."""
+        self.store.save({"id": f"{job['id']}-{item['index']}", "batch": job["id"], "user": job["user"], "env": job["env"],
+                         "workspace": job["workspace"], "group": job["group"], "tile": item["tile"], "blob_path": item["blob_path"],
+                         "status": item["status"], "error": item["error"], "created": job["created"],
+                         "started": item.get("started"), "finished": item.get("finished"), "seconds": item["seconds"],
+                         "batch_size": job["counts"]["total"]})
+
     def _run(self, job, create_workspace):
         job["status"] = "running"
         job["started"] = time.time()
-        final = "failed"
         try:
-            m = add_cog_mod.add_cog(job["env"], job["workspace"], job["group"], job["tile"], job["blob_path"],
-                                    progress=self._progress(job), create_workspace=create_workspace)
-            if m.get("skipped"):
-                for s in job["steps"]:
-                    if s["status"] == "pending":
-                        s["status"] = "skipped"
-            job["result"] = {k: v for k, v in m.items() if k not in ("footprint_3857",)}
-            final = "done"
-        except Exception as e:  # report to the user; the add is idempotent so it can simply be run again
-            job["error"] = str(e)[:500]
-            for s in job["steps"]:
-                if s["status"] == "running":
-                    s["status"] = "failed"
+            for item in job["items"]:
+                job["current"] = item["index"]
+                item["status"], item["started"] = "running", time.time()
+                try:
+                    m = add_cog_mod.add_cog(job["env"], job["workspace"], job["group"], item["tile"], item["blob_path"],
+                                            progress=self._progress(item), create_workspace=create_workspace, refresh=job["refresh"])
+                    if m.get("skipped"):
+                        for s in item["steps"]:
+                            if s["status"] == "pending":
+                                s["status"] = "skipped"
+                        item["status"] = "skipped"
+                        job["counts"]["skipped"] += 1
+                    else:
+                        item["status"] = "done"
+                        job["counts"]["done"] += 1
+                    item["result"] = {k: v for k, v in m.items() if k != "footprint_3857"}
+                except Exception as e:  # carry on with the next COG; every add is idempotent so a failed one can be re-run
+                    item["status"], item["error"] = "failed", str(e)[:500]
+                    job["counts"]["failed"] += 1
+                    for s in item["steps"]:
+                        if s["status"] == "running":
+                            s["status"] = "failed"
+                finally:
+                    item["finished"] = time.time()
+                    item["seconds"] = round(item["finished"] - item["started"], 1)
+                    self._record(job, item)
+                create_workspace = False  # the first COG created it (or it already existed)
         finally:
+            c = job["counts"]
             job["finished"] = time.time()
             with self._lock:
                 self._active.discard((job["env"], job["workspace"], job["group"]))
-            self.store.save({**job, "status": final})   # persist BEFORE the status flips, so the UI never sees "done" without history
-            job["status"] = final
+            job["current"] = None
+            job["status"] = "failed" if c["failed"] == c["total"] else ("partial" if c["failed"] else "done")
 
     def get(self, job_id):
         return self.jobs.get(job_id)

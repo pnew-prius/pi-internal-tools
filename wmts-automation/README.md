@@ -18,12 +18,14 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 44 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 56 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
-The page: choose environment, workspace, service (layer group), paste the COG blob path (or full blob URL), Add. Progress shows
-each step; history lists who added what. One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
+The page: choose environment, workspace, service (layer group), paste one or many COG blob paths (one per line; paths or full blob URLs), Add.
+The list is validated as you type (line numbers, duplicates, clashing layer names, max 100); nothing starts until it is clean. COGs are added one at a time
+in pasted order and a failed COG does NOT stop the rest (job ends done / partial / failed; one history row per COG; failed ones can be put back in the box).
+COGs already in the service are skipped unless 'Refresh' is ticked (re-runs tile config, truncate and seed: repairs a failed add or picks up a replaced file). One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
 are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (default `dev`). A failed add removes anything it created.
 
 ## Files
@@ -55,6 +57,8 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 9. `az storage blob list` silently caps at 5,000 unless `--num-results` is raised. Tiles are keyed in blob by the group's internal ID.
 
 ## Open items
+- Thorough-test plan in progress (see below). Defects found by live testing so far, all fixed with regression tests: orphaned store when a COG is unreadable;
+  history race (job shown done before it was recorded); the stray-layer sweep deleted OTHER services' tile layers in the same workspace; button enabled with invalid input.
 - Seed time grows with group size (first 10 adds 9 s -> last 10 adds 22 s); re-measure at larger sizes.
 - Tile responses are `no-cache` (set `EXPIRE_CLIENTS` in `add_cog.py`); no CORS headers (matters for browser clients such as ArcGIS Online).
 - GUI not yet deployed. To do before deploying: durable history store (App Service disk is not durable), App Service Authentication restricted to an Entra group
