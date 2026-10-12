@@ -230,3 +230,9 @@ def test_page_has_service_type_and_copyable_url_support(client):
     c, *_ = client
     html = c.get("/", headers=H).data
     assert b'id="stype"' in html and b"copyText" in html and b"WMS capabilities URL" in html and b"WMTS tile URL template" in html
+
+
+def test_oversized_request_is_refused(client):
+    c, mgr, fake = client
+    r = c.post("/api/jobs", data=("x" * (300 * 1024)), headers=dict(H, **{"Content-Type": "application/json"}))
+    assert r.status_code == 413 and not mgr.jobs

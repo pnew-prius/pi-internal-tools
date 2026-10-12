@@ -21,6 +21,7 @@ PUBLIC_HOSTS = {"dev": "devimageservices.priusintelli.com", "prod": "imageservic
 
 def create_app(manager=None):
     app = Flask(__name__)
+    app.config["MAX_CONTENT_LENGTH"] = 256 * 1024  # a 100-line batch is ~15 KB; refuse anything much larger
     app.config["TEMPLATES_AUTO_RELOAD"] = os.environ.get("WMTS_LOCAL") == "1"  # edit-and-refresh while developing locally
     envs = [e.strip() for e in os.environ.get("WMTS_ENVS", "dev").split(",") if e.strip()]
     data_dir = os.environ.get("WMTS_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
@@ -55,6 +56,10 @@ def create_app(manager=None):
     @app.errorhandler(UnsupportedMedia)
     def media(e):
         return jsonify(error="Send application/json."), 415
+
+    @app.errorhandler(413)
+    def too_big(e):
+        return jsonify(error="Request too large."), 413
 
     @app.errorhandler(ValidationError)
     def bad(e):

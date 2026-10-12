@@ -67,6 +67,9 @@ class FakeGS:
             grp = body["layerGroup"]; self.groups[(g.group(1), grp["name"])] = grp
             self.gwc[f"{g.group(1)}:{grp['name']}"] = "auto-group"; return 201, grp["name"]
         g = m(r"/rest/workspaces/([^/]+)/layergroups/([^/]+)", path)
+        if g and method == "DELETE":
+            self.groups.pop((g.group(1), g.group(2)), None); self.gwc.pop(f"{g.group(1)}:{g.group(2)}", None); return 200, ""
+        g = m(r"/rest/workspaces/([^/]+)/layergroups/([^/]+)", path)
         if g and method == "PUT":
             self.groups[(g.group(1), g.group(2))] = body["layerGroup"]; return 200, ""
         g = m(r"/gwc/rest/layers/(.+)\.xml", path)
@@ -78,7 +81,14 @@ class FakeGS:
         if g and method == "DELETE":
             self.gwc.pop(g.group(1), None); return 200, "deleted"
         if g and method == "GET":
-            return (200, {"GeoServerLayer": {"name": g.group(1)}}) if g.group(1) in self.gwc else (500, "Unknown layer")
+            if g.group(1) not in self.gwc:
+                return 500, "Unknown layer"
+            xml = self.gwc[g.group(1)]
+            coords = [float(v) for v in re.findall(r"<double>([^<]+)</double>", xml)] if isinstance(xml, str) and "<coords>" in xml else None
+            lay = {"name": g.group(1)}
+            if coords:
+                lay["gridSubsets"] = [{"extent": {"coords": coords}}]
+            return 200, {"GeoServerLayer": lay}
         g = m(r"/gwc/rest/seed/(.+)\.json", path)
         if g and method == "POST":
             self.seeds.append((body["seedRequest"]["type"], body["seedRequest"]["zoomStart"], body["seedRequest"]["zoomStop"],

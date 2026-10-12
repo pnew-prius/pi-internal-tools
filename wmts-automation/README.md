@@ -18,7 +18,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 68 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 77 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -29,11 +29,24 @@ in pasted order and a failed COG does NOT stop the rest (job ends done / partial
 COGs already in the service are skipped unless 'Refresh' is ticked (re-runs tile config, truncate and seed: repairs a failed add or picks up a replaced file). One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
 are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (default `dev`). A failed add removes anything it created.
 
+## Live test suite (real DEV GeoServer; opt-in)
+```
+set WMTS_LIVE=1
+python -m pytest live_tests -m "live and not slow" -v      # ~3 min: 9 tests
+python -m pytest live_tests -m slow -v -s                  # 54-COG WMS batch through the app (scale)
+```
+Each test builds in a brand-new throwaway workspace (name checked against prod) and tears it down with `remove_service` (truncates the tile cache, deletes the
+group and layers, deletes the workspace) and then asserts NO tiles are left in the shared cache. Covers: adjoining-COG seams vs an uncached render, WMS never grows a
+tile layer, batch carries on past a missing file, refresh repairs a failed add, two services built at once in one workspace, two app instances adding to the same
+service (concurrent writers), kill the process mid-add then refresh, remove-service leaves no orphan tiles, prod cannot be written.
+
 ## Files
 | File | Purpose |
 |---|---|
 | `app.py`, `templates/index.html` | Flask UI + JSON API (`/api/jobs`, `/api/workspaces`, `/api/groups`, `/api/service`, `/healthz`) |
 | `jobs.py`, `store.py` | one-job-per-service background runner; JSON-lines history (replace with Azure Table/Blob before deploy) |
+| `remove_service.py` | remove a service properly: truncate tile cache (all zooms) BEFORE deleting; keeps layers another group still uses |
+| `live_tests/` | opt-in live suite (above) |
 | `validate.py`, `safety.py` | input rules (path/URL normalizing, no SAS/`..`), prod-name guard |
 | `tests/` | pytest suite with `fake_gs.py` (in-memory GeoServer/GWC) |
 | `gs_client.py` | requests-based REST client (custom User-Agent: the App Gateway 403s Python's default). Password: `GEOSERVER_PASS` env var, else Key Vault via `DefaultAzureCredential` (az login locally, managed identity in Azure); prod needs `allow_prod=True` |
@@ -58,7 +71,9 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 9. `az storage blob list` silently caps at 5,000 unless `--num-results` is raised. Tiles are keyed in blob by the group's internal ID.
 
 ## Open items
-- **Removing a service**: deleting a workspace/group in GeoServer does NOT delete its cached tiles (verified: 28k orphan tiles stayed in `pigeoserverprod/tilecache`). A future 'remove service' action must truncate the tile cache first (all zooms), then delete. Test tiles were removed by prefix (group internal ID) with `az storage blob delete-batch`.
+- **Removing a service**: deleting a workspace/group in GeoServer does NOT delete its cached tiles (verified: 28k orphan tiles stayed in `pigeoserverprod/tilecache`). `remove_service.py` truncates first (verified live: 0 tiles left). It is not wired into the UI yet.
+- **Concurrent writers** (two App Service instances): GeoServer has no compare-and-swap; `put_member_in_group` re-reads, retries a lost creation race as an update and verifies membership/bounds afterwards, and `sync_tile_extent` re-widens the tile extent. Verified live with two simultaneous adds. For stronger guarantees use ONE instance/worker, or add a blob-lease lock on a small dedicated storage account (which the app also needs for durable history).
+- **Linux parity untested** (no WSL/Docker here): run the unit suite on a Linux CI runner or on a throwaway app on `asp-dev1`.
 - A WMS-only group could get a tile layer re-created later by GeoServer; a periodic sweep (`reconcile_stray_tile_layers(..., include_group=True)`) would catch it.
 - Thorough-test plan in progress (see below). Defects found by live testing so far, all fixed with regression tests: orphaned store when a COG is unreadable;
   history race (job shown done before it was recorded); the stray-layer sweep deleted OTHER services' tile layers in the same workspace; button enabled with invalid input.

@@ -154,3 +154,118 @@ def test_group_made_by_hand_is_typed_by_whether_it_has_a_tile_layer(fake):
 def test_unknown_service_type_is_rejected(fake):
     with pytest.raises(ValueError):
         add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif", service="wfs")
+
+
+# ---------------------------------------------------------------- remove service
+def test_remove_service_truncates_tiles_then_deletes_group_and_exclusive_layers(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "A", "t-01", "Cust/proj/t-01-RGB.tif")
+    add_cog("dev", WS, "A", "t-02", "Cust/proj/t-02-RGB.tif")
+    n = len(fake.seeds)
+    out = rs.remove_service("dev", WS, "A")
+    assert fake.seeds[n][0] == "truncate" and fake.seeds[n][1:3] == (0, 24) and out["truncated"]   # truncate BEFORE delete, every zoom
+    assert group_state("dev", WS, "A") is None and f"{WS}:A" not in fake.gwc
+    assert sorted(out["layers_deleted"]) == ["t-01", "t-02"] and not any(k[0] == WS for k in fake.stores)
+
+
+def test_remove_service_keeps_layers_another_group_still_uses(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "A", "t-01", "Cust/proj/t-01-RGB.tif")
+    add_cog("dev", WS, "B", "t-01", "Cust/proj/t-01-RGB.tif")          # same layer used by a second service
+    out = rs.remove_service("dev", WS, "A")
+    assert out["layers_kept"] == ["t-01"] and (WS, "t-01") in fake.stores and group_state("dev", WS, "B")[1] == ["t-01"]
+
+
+def test_remove_wms_service_has_nothing_to_truncate(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "L", "t-01", "Cust/proj/t-01-RGB.tif", service="wms")
+    n = len(fake.seeds)
+    out = rs.remove_service("dev", WS, "L")
+    assert out["type"] == "wms" and not out["truncated"] and len(fake.seeds) == n
+
+
+def test_remove_missing_service_is_an_error(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    with pytest.raises(RuntimeError, match="does not exist"):
+        rs.remove_service("dev", WS, "nope")
+
+
+# ---------------------------------------------------------------- concurrent writers (two app instances)
+def test_lost_creation_race_is_retried_as_an_update(fake, monkeypatch):
+    """Another instance creates the same new group between our existence check and our POST."""
+    import add_cog as ac
+    fake.workspaces.add(WS)
+    real, state = fake.call, {"raced": False}
+
+    def racing(env, method, path, body=None, *a, **k):
+        if method == "POST" and path.endswith("/layergroups") and not state["raced"]:
+            state["raced"] = True
+            real(env, method, path, {"layerGroup": {"name": G, "publishables": {"published": [{"name": f"{WS}:other"}]},
+                 "bounds": {"minx": 0, "miny": 0, "maxx": 1, "maxy": 1, "crs": {"$": "EPSG:3857"}}}})  # the winner
+            return 500, f"Layer group named '{G}' already exists in workspace {WS}"
+        return real(env, method, path, body, *a, **k)
+    monkeypatch.setattr(ac, "call", racing)
+    monkeypatch.setattr(ac.time, "sleep", lambda *_: None)
+    m = add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    assert group_state("dev", WS, G)[1] == ["other", "t-01"] and m["group_action"].startswith("updated")
+
+
+def test_a_stale_overwrite_that_drops_our_cog_is_detected_and_redone(fake, monkeypatch):
+    import add_cog as ac
+    fake.workspaces.add(WS)
+    first = add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    stale_group = group_state("dev", WS, G)[0]                          # the group exactly as another writer last saw it
+    real, state = fake.call, {"n": 0}
+
+    def clobber(env, method, path, body=None, *a, **k):
+        res = real(env, method, path, body, *a, **k)
+        if method == "PUT" and "/layergroups/" in path and state["n"] == 0:
+            state["n"] = 1                     # a concurrent writer PUTs its stale copy (without our new COG) right after ours
+            real(env, "PUT", path, {"layerGroup": stale_group})
+        return res
+    monkeypatch.setattr(ac, "call", clobber)
+    monkeypatch.setattr(ac.time, "sleep", lambda *_: None)
+    second = add_cog("dev", WS, G, "t-02", "Cust/proj/t-02-RGB.tif")
+    g, members = group_state("dev", WS, G)
+    b = g["bounds"]
+    assert members == ["t-01", "t-02"]
+    for fp in (first["footprint_3857"], second["footprint_3857"]):       # bounds cover BOTH COGs after the redo
+        assert b["minx"] <= fp[0] + 1 and b["maxx"] >= fp[2] - 1 and b["miny"] <= fp[1] + 1 and b["maxy"] >= fp[3] - 1
+
+
+def test_gives_up_with_a_clear_error_if_every_attempt_is_overwritten(fake, monkeypatch):
+    import add_cog as ac
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    real = fake.call
+
+    def always_clobber(env, method, path, body=None, *a, **k):
+        res = real(env, method, path, body, *a, **k)
+        if method == "PUT" and "/layergroups/" in path:
+            real(env, "PUT", path, {"layerGroup": {"name": G, "publishables": {"published": [{"@type": "layer", "name": f"{WS}:t-01"}]},
+                 "bounds": {"minx": 0, "miny": 0, "maxx": 1, "maxy": 1, "crs": {"$": "EPSG:3857"}}}})
+        return res
+    monkeypatch.setattr(ac, "call", always_clobber)
+    monkeypatch.setattr(ac.time, "sleep", lambda *_: None)
+    with pytest.raises(RuntimeError, match="after 6 attempts"):
+        add_cog("dev", WS, G, "t-02", "Cust/proj/t-02-RGB.tif")
+
+
+def test_too_narrow_tile_extent_is_widened_to_the_group_bounds(fake):
+    from add_cog import sync_tile_extent
+    from gwc import set_tile_layer_xml
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    assert sync_tile_extent("dev", WS, G) is False                      # already consistent: nothing written
+    g = group_state("dev", WS, G)[0]["bounds"]
+    narrow = [g["minx"] + 5000, g["miny"] + 5000, g["maxx"] - 5000, g["maxy"] - 5000]
+    set_tile_layer_xml("dev", f"{WS}:{G}", narrow)
+    assert sync_tile_extent("dev", WS, G) is True                       # widened back to the group's bounds
+    assert sync_tile_extent("dev", WS, G) is False

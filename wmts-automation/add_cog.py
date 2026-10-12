@@ -3,6 +3,7 @@
 Stateless: everything is read from GeoServer, so it can run now, later, or resume after a failure.
 Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> bbox seed -> stray sweep.
 """
+import random
 import time
 import urllib.parse
 
@@ -44,6 +45,72 @@ def group_state(env, ws, group):
 def workspace_exists(env, ws):
     c, r = call(env, "GET", f"/rest/workspaces/{ws}.json")
     return c == 200
+
+
+def _covers(bounds, fp, tol=1.0):
+    return (bounds["minx"] <= fp[0] + tol and bounds["miny"] <= fp[1] + tol and bounds["maxx"] >= fp[2] - tol and bounds["maxy"] >= fp[3] - tol)
+
+
+def _group_bounds_json(b):
+    return {"minx": b[0], "miny": b[1], "maxx": b[2], "maxy": b[3], "crs": {"@class": "projected", "$": "EPSG:3857"}}
+
+
+def put_member_in_group(env, ws, group, tile, fp, service, attempts=6):
+    """Add `tile` to the group (creating it if needed) safely against a concurrent writer (another app instance).
+    GeoServer has no compare-and-swap, so: re-read before every write, retry a lost creation race as an update, and
+    VERIFY afterwards that our member is still there and the bounds still cover our footprint (a concurrent PUT of a
+    stale copy can drop it). Returns (action, bounds[minx,miny,maxx,maxy], member_count)."""
+    last = None
+    for _ in range(attempts):
+        state = group_state(env, ws, group)
+        if state is None:
+            bounds, action = list(fp), "created"
+            body = {"layerGroup": {"name": group, "title": group, "mode": "SINGLE", "workspace": {"name": ws},
+                                   "publishables": {"published": [{"@type": "layer", "name": f"{ws}:{tile}"}]},
+                                   "styles": {"style": [{"name": "raster"}]},
+                                   "metadata": {"entry": [{"@key": TYPE_KEY, "$": service}]}, "bounds": _group_bounds_json(bounds)}}
+            c, r = call(env, "POST", f"/rest/workspaces/{ws}/layergroups", body)
+            ok = c == 201
+        else:
+            g, members = state
+            b = g["bounds"]
+            bounds = [min(b["minx"], fp[0]), min(b["miny"], fp[1]), max(b["maxx"], fp[2]), max(b["maxy"], fp[3])]
+            new = members if tile in members else members + [tile]
+            action = "refreshed (already a member)" if tile in members else f"updated ({len(members)}->{len(new)} members)"
+            g["publishables"] = {"published": [{"@type": "layer", "name": f"{ws}:{x}"} for x in new]}
+            g["styles"] = {"style": [{"name": "raster"} for _ in new]}
+            g["bounds"] = _group_bounds_json(bounds)
+            c, r = call(env, "PUT", f"/rest/workspaces/{ws}/layergroups/{group}", {"layerGroup": g})
+            ok = c == 200
+        if ok:
+            chk = group_state(env, ws, group)
+            if chk and tile in chk[1] and _covers(chk[0]["bounds"], fp):
+                b = chk[0]["bounds"]
+                return action, [b["minx"], b["miny"], b["maxx"], b["maxy"]], len(chk[1])
+            last = "our COG was overwritten by a concurrent update"
+        else:
+            last = f"HTTP {c} {str(r)[:160]}"
+        time.sleep(random.uniform(0.2, 0.8))  # back off a little, then re-read and try again
+    raise RuntimeError(f"could not add {tile} to {ws}:{group} after {attempts} attempts ({last})")
+
+
+def sync_tile_extent(env, ws, group):
+    """The tile layer's extent is not updated by GeoServer when the group grows, and two concurrent writers can leave it
+    too narrow (tiles outside it return 400). Make it cover the group's CURRENT bounds. Returns True if it changed."""
+    st = group_state(env, ws, group)
+    c, r = call(env, "GET", f"/gwc/rest/layers/{ws}:{group}.json")
+    if not st or c != 200 or not isinstance(r, dict):
+        return False
+    b = st[0]["bounds"]
+    box = [b["minx"], b["miny"], b["maxx"], b["maxy"]]
+    try:
+        e = r["GeoServerLayer"]["gridSubsets"][0]["extent"]["coords"]
+        if e[0] <= box[0] + 1 and e[1] <= box[1] + 1 and e[2] >= box[2] - 1 and e[3] >= box[3] - 1:
+            return False
+    except (KeyError, IndexError, TypeError):
+        pass
+    set_tile_layer_xml(env, f"{ws}:{group}", box, formats=("image/png",), gridset="EPSG:3857", expire_clients=EXPIRE_CLIENTS)
+    return True
 
 
 def reconcile_stray_tile_layers(env, ws, group, settle_sec=3, include_group=False):
@@ -141,38 +208,7 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
 
     # 2. add to the group; GeoServer does NOT recompute bounds, so set them = union(existing, footprint) in EPSG:3857
     start("group_update")
-    if already:  # refresh: membership is unchanged; make sure the bounds still cover this COG
-        g, members = state
-        b = g["bounds"]
-        bounds = [min(b["minx"], fp[0]), min(b["miny"], fp[1]), max(b["maxx"], fp[2]), max(b["maxy"], fp[3])]
-        if bounds != [b["minx"], b["miny"], b["maxx"], b["maxy"]]:
-            g["bounds"] = {"minx": bounds[0], "miny": bounds[1], "maxx": bounds[2], "maxy": bounds[3],
-                           "crs": {"@class": "projected", "$": "EPSG:3857"}}
-            call(env, "PUT", f"/rest/workspaces/{ws}/layergroups/{group}", {"layerGroup": g})
-        m["group_action"], ok = "refreshed (already a member)", True
-    elif state is None:
-        bounds = fp
-        body = {"layerGroup": {"name": group, "title": group, "mode": "SINGLE", "workspace": {"name": ws},
-                               "publishables": {"published": [{"@type": "layer", "name": f"{ws}:{tile}"}]},
-                               "styles": {"style": [{"name": "raster"}]},
-                               "metadata": {"entry": [{"@key": TYPE_KEY, "$": service}]},
-                               "bounds": {"minx": bounds[0], "miny": bounds[1], "maxx": bounds[2], "maxy": bounds[3],
-                                          "crs": {"@class": "projected", "$": "EPSG:3857"}}}}
-        c, r = call(env, "POST", f"/rest/workspaces/{ws}/layergroups", body)
-        ok, m["group_action"] = c == 201, "created"
-    else:
-        g, members = state
-        b = g["bounds"]
-        bounds = [min(b["minx"], fp[0]), min(b["miny"], fp[1]), max(b["maxx"], fp[2]), max(b["maxy"], fp[3])]
-        g["publishables"] = {"published": [{"@type": "layer", "name": f"{ws}:{x}"} for x in members + [tile]]}
-        g["styles"] = {"style": [{"name": "raster"} for _ in members + [tile]]}
-        g["bounds"] = {"minx": bounds[0], "miny": bounds[1], "maxx": bounds[2], "maxy": bounds[3],
-                       "crs": {"@class": "projected", "$": "EPSG:3857"}}
-        c, r = call(env, "PUT", f"/rest/workspaces/{ws}/layergroups/{group}", {"layerGroup": g})
-        ok, m["group_action"] = c == 200, f"updated ({len(members)}->{len(members) + 1} members)"
-    if not ok:
-        raise RuntimeError(f"group {m['group_action']} failed {c} {str(r)[:200]}")
-    m["members_after"] = len(state[1]) if already else (len(state[1]) if state else 0) + 1
+    m["group_action"], bounds, m["members_after"] = put_member_in_group(env, ws, group, tile, fp, service)
     m["group_bounds_3857"] = bounds
     done("group_update", m["group_action"])
 
@@ -200,6 +236,8 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
 
     # 6. only the group may be tiled/advertised
     start("reconcile")
+    if service == "wmts":
+        m["tile_extent_resynced"] = sync_tile_extent(env, ws, group)
     m["stray_tile_layers_removed"] = reconcile_stray_tile_layers(env, ws, group, include_group=(service == "wms"))
     done("reconcile", f"{len(m['stray_tile_layers_removed'])} removed")
 
