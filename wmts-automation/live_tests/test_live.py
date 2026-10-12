@@ -198,3 +198,19 @@ def test_scale_54_cogs_as_one_wms_batch_via_the_app(ws, tmp_path):
     print(f"\nSCALE: {j['counts']} first10 mean {sum(secs[:10])/10:.1f}s last10 mean {sum(secs[-10:])/10:.1f}s max {max(secs)}s")
     assert j["counts"]["failed"] == 0 and len(group_state("dev", ws, "All")[1]) == len(blobs)
     assert sum(secs[-10:]) / 10 < 4 * sum(secs[:10]) / 10                 # no runaway slowdown as the group grows
+
+
+def test_remove_via_the_app_clears_tiles_and_deletes_the_empty_workspace(ws, tmp_path):
+    add_cog("dev", ws, "Svc", "ww26-01", blob(1))
+    gid = call("dev", "GET", f"/gwc/rest/layers/{ws}:Svc.json")[1]["GeoServerLayer"]["id"]
+    assert tiles_in_cache(gid) > 500
+    mgr = JobManager(JsonlStore(str(tmp_path / "h.jsonl")))
+    c = app_mod.create_app(mgr).test_client()
+    H = {"X-MS-CLIENT-PRINCIPAL-NAME": "live@test"}
+    assert c.post("/api/remove", json={"workspace": ws, "group": "Svc", "confirm": "wrong"}, headers=H).status_code == 400
+    r = c.post("/api/remove", json={"workspace": ws, "group": "Svc", "confirm": "Svc"}, headers=H)
+    assert r.status_code == 202
+    j = wait_job(c, r.get_json()["job"]["id"])
+    assert j["status"] == "done" and j["items"][0]["result"]["workspace_deleted"] is True
+    assert tiles_in_cache(gid) == 0
+    assert ws not in {w["name"] for w in call("dev", "GET", "/rest/workspaces.json")[1]["workspaces"]["workspace"]}

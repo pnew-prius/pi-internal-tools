@@ -10,7 +10,7 @@ import re
 from flask import Flask, jsonify, render_template, request
 
 import safety
-from add_cog import SERVICE_TYPES, group_service_type, group_state
+from add_cog import SERVICE_TYPES, group_marker, group_service_type, group_state
 from gs_client import call
 from jobs import Busy, JobManager
 from store import JsonlStore
@@ -145,6 +145,31 @@ def create_app(manager=None):
         try:
             job = mgr.submit(current_user(), env, ws, group, [{"tile": i["tile"], "path": i["path"]} for i in items],
                              create_workspace=bool(body.get("create_workspace")), refresh=bool(body.get("refresh")), service=service)
+        except Busy as e:
+            return jsonify(error=str(e)), 409
+        return jsonify(job=job), 202
+
+    @app.post("/api/remove")
+    def remove():
+        body = json_body()
+        env = env_or_400()
+        ws = check_name("Workspace", body.get("workspace"))
+        group = check_name("Service", body.get("group"))
+        if body.get("confirm") != group:
+            raise ValidationError("Type the exact service name to confirm the removal.")
+        try:
+            safety.assert_not_on_prod(env, ws)
+        except PermissionError as e:
+            return jsonify(error=str(e)), 403
+        except RuntimeError as e:
+            return jsonify(error=str(e)), 503
+        st = group_state(env, ws, group)
+        if st is None:
+            return jsonify(error=f"Service {ws}:{group} does not exist."), 404
+        if group_marker(st[0]) is None:
+            return jsonify(error="This service was not created by this app, so it cannot be removed here."), 403
+        try:
+            job = mgr.submit_remove(current_user(), env, ws, group)
         except Busy as e:
             return jsonify(error=str(e)), 409
         return jsonify(job=job), 202

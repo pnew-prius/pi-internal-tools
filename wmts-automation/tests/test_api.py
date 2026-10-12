@@ -236,3 +236,57 @@ def test_oversized_request_is_refused(client):
     c, mgr, fake = client
     r = c.post("/api/jobs", data=("x" * (300 * 1024)), headers=dict(H, **{"Content-Type": "application/json"}))
     assert r.status_code == 413 and not mgr.jobs
+
+
+# ---------------------------------------------------------------- remove service via the API
+def build(c, group="Svc", service="wmts"):
+    return wait(c, post(c, dict(BODY, group=group, service_type=service)).get_json()["job"]["id"])
+
+
+def test_remove_requires_typing_the_service_name(client):
+    c, *_ = client
+    build(c)
+    r = c.post("/api/remove", json={"workspace": "TESTWS", "group": "Svc", "confirm": "svc"}, headers=H)
+    assert r.status_code == 400 and "exact service name" in r.get_json()["error"]
+
+
+def test_remove_runs_truncate_first_then_deletes_everything(client):
+    c, mgr, fake = client
+    build(c)
+    r = c.post("/api/remove", json={"workspace": "TESTWS", "group": "Svc", "confirm": "Svc"}, headers=H)
+    assert r.status_code == 202
+    j = wait(c, r.get_json()["job"]["id"])
+    assert j["status"] == "done" and j["kind"] == "remove" and [s["status"] for s in j["items"][0]["steps"]] == ["done"] * 4
+    assert fake.seeds[-1][0] == "truncate" and fake.seeds[-1][1:3] == (0, 24)
+    assert not fake.groups and "TESTWS" not in fake.workspaces            # service, layers and the now-empty workspace are gone
+    rows = c.get("/api/jobs", headers=H).get_json()["jobs"]
+    assert rows[0]["kind"] == "remove"                                      # recorded in history
+
+
+def test_remove_refuses_services_this_app_did_not_create(client):
+    c, mgr, fake = client
+    fake.workspaces.add("HANDMADE")
+    fake.groups[("HANDMADE", "Old")] = {"name": "Old", "publishables": {"published": [{"name": "HANDMADE:x"}]},
+                                       "bounds": {"minx": 0, "miny": 0, "maxx": 1, "maxy": 1}}
+    r = c.post("/api/remove", json={"workspace": "HANDMADE", "group": "Old", "confirm": "Old"}, headers=H)
+    assert r.status_code == 403 and "not created by this app" in r.get_json()["error"] and ("HANDMADE", "Old") in fake.groups
+
+
+def test_remove_refuses_workspaces_that_exist_on_prod(client):
+    c, *_ = client
+    r = c.post("/api/remove", json={"workspace": "COPE-S26", "group": "X", "confirm": "X"}, headers=H)
+    assert r.status_code == 403 and "share one tile cache" in r.get_json()["error"]
+
+
+def test_remove_unknown_service_is_404_and_busy_service_is_409(client):
+    c, mgr, fake = client
+    assert c.post("/api/remove", json={"workspace": "TESTWS", "group": "Nope", "confirm": "Nope"}, headers=H).status_code == 404
+    build(c)
+    mgr.submit("a", "dev", "TESTWS", "Svc", [{"tile": "t-02", "path": "Cust/proj/t-02-RGB.tif"}], run=False)   # an add is in flight
+    assert c.post("/api/remove", json={"workspace": "TESTWS", "group": "Svc", "confirm": "Svc"}, headers=H).status_code == 409
+
+
+def test_remove_needs_json_and_a_signed_in_user(client):
+    c, *_ = client
+    assert c.post("/api/remove", json={"workspace": "TESTWS", "group": "Svc", "confirm": "Svc"}).status_code == 401
+    assert c.post("/api/remove", data="x=1", headers=H).status_code == 415

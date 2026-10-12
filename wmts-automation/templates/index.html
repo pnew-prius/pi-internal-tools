@@ -102,6 +102,18 @@
     </form>
   </section>
 
+  <section aria-labelledby="remh">
+    <h2 id="remh">Remove a service</h2>
+    <p class="hint" style="margin-top:0">Clears its tile cache first, then deletes the service and its layers (layers another service uses are kept). Only services built by this app can be removed. This cannot be undone.</p>
+    <form id="rmform" class="grid" autocomplete="off">
+      <div><label for="rmws">Workspace</label><input type="text" id="rmws" list="wslist" required></div>
+      <div><label for="rmgroup">Service (layer group)</label><input type="text" id="rmgroup" required></div>
+      <div><label for="rmconfirm">Type the service name to confirm</label><input type="text" id="rmconfirm" required></div>
+      <div class="full"><div class="row"><button id="rmgo" type="submit" disabled style="background:var(--rust)">Remove service</button><span class="hint" id="rmnote"></span></div>
+      <div class="error" id="rmerr" role="alert"></div></div>
+    </form>
+  </section>
+
   <section id="progress" aria-live="polite" style="display:none">
     <h2>Progress <span id="jobtitle" style="text-transform:none;letter-spacing:0;font-weight:400;color:#595959"></span></h2>
     <div id="overall" style="font-size:14px"></div>
@@ -121,6 +133,8 @@
 const $ = (id) => document.getElementById(id);
 const LABELS = {workspace:"Workspace", publish:"Publish COG as a hidden layer", group_update:"Add to service group and update bounds",
   tile_config:"Set tile cache (EPSG:3857, PNG)", truncate:"Truncate old tiles in the COG's area", seed:"Seed new tiles (zoom 0-15)", reconcile:"Clean up stray tile layers"};
+const LABELS_REMOVE = {tile_cache:"Clear the tile cache (all zooms)", delete_group:"Delete the service group",
+  delete_layers:"Delete its layers (except those another service uses)", workspace:"Delete the workspace if it is now empty"};
 let timer = null;
 
 async function api(path, opts) {
@@ -164,16 +178,23 @@ function urlRow(label, url, note) {
   if (note) wrap.append(el("div", note, "hint"));
   return wrap;
 }
-function renderStepList(item) {
+function renderStepList(item, kind) {
   $("steps").replaceChildren(...item.steps.map(s => {
     const li = el("li", undefined, s.status);
-    li.append(el("span", undefined, "dot"), el("span", LABELS[s.name] + (s.detail ? " - " + s.detail : "")),
+    li.append(el("span", undefined, "dot"), el("span", ((kind === "remove" ? LABELS_REMOVE[s.name] : LABELS[s.name]) || s.name) + (s.detail ? " - " + s.detail : "")),
               el("span", s.seconds != null ? s.seconds.toFixed(1) + " s" : (s.status === "skipped" ? "skipped" : ""), "secs"));
     return li;
   }));
 }
 function renderJob(job) {
   const c = job.counts, finished = c.done + c.skipped + c.failed;
+  if (job.kind === "remove") {
+    $("overall").textContent = (job.status === "running" || job.status === "queued") ? "Removing " + job.workspace + ":" + job.group + " ..." : (job.status === "done" ? "Removed." : "Removal failed.");
+    $("barfill").style.width = (job.status === "done" || job.status === "failed") ? "100%" : "30%";
+    $("items").replaceChildren();
+    const only = job.items[0]; $("stephdr").textContent = "Steps"; renderStepList(only, "remove");
+    return;
+  }
   $("overall").textContent = (job.status === "running" || job.status === "queued")
     ? "Adding " + Math.min(finished + 1, c.total) + " of " + c.total + " - " + c.done + " added, " + c.skipped + " skipped, " + c.failed + " failed"
     : c.done + " added, " + c.skipped + " skipped, " + c.failed + " failed (of " + c.total + ")";
@@ -186,11 +207,19 @@ function renderJob(job) {
     return li;
   }));
   const cur = job.items.find(i => i.status === "running") || job.items[Math.max(0, finished - 1)];
-  if (cur) { $("stephdr").textContent = "Steps for " + cur.tile; renderStepList(cur); }
+  if (cur) { $("stephdr").textContent = "Steps for " + cur.tile; renderStepList(cur, job.kind); }
 }
 function renderResult(job) {
   const box = $("result"); box.replaceChildren(); box.style.display = "block";
   const c = job.counts;
+  if (job.kind === "remove") {
+    const it = job.items[0], r = it.result || {};
+    if (job.status === "done") {
+      box.append(el("strong", "Service removed. "), el("span", (r.layers_deleted || []).length + " layer(s) deleted" + ((r.layers_kept || []).length ? ", " + r.layers_kept.length + " kept (another service uses them)" : "") +
+        (r.truncated ? ", tile cache cleared." : ", no tile cache to clear.") + (r.workspace_deleted ? " The empty workspace was deleted." : "")));
+    } else { box.append(el("strong", "Removal failed. "), el("span", it.error || "")); }
+    return;
+  }
   box.append(el("strong", c.failed ? (c.done || c.skipped ? "Finished with problems. " : "Nothing was added. ") : "Done. "),
              el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
   const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
@@ -271,6 +300,25 @@ $("form").addEventListener("submit", async (ev) => {
     renderJob(job); timer = setInterval(() => poll(job.id), 1000);
   } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }
 });
+function syncRemove() { const g = $("rmgroup").value.trim(); $("rmgo").disabled = running || !g || $("rmconfirm").value !== g || !$("rmws").value.trim(); }
+["rmws", "rmgroup", "rmconfirm"].forEach(id => $(id).addEventListener("input", syncRemove));
+$("rmform").addEventListener("submit", async (ev) => {
+  ev.preventDefault(); $("rmerr").style.display = "none"; $("result").style.display = "none";
+  running = true; syncRemove(); syncButton($("go").textContent);
+  try {
+    const { job } = await api("/api/remove", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ env: $("env").value, workspace: $("rmws").value.trim(), group: $("rmgroup").value.trim(), confirm: $("rmconfirm").value }) });
+    $("progress").style.display = "block"; $("jobtitle").textContent = "- removing " + job.workspace + ":" + job.group;
+    renderJob(job); timer = setInterval(() => pollRemove(job.id), 1000);
+  } catch (e) { $("rmerr").textContent = e.message; $("rmerr").style.display = "block"; running = false; syncRemove(); syncButton($("go").textContent); }
+});
+async function pollRemove(id) {
+  try {
+    const { job } = await api("/api/jobs/" + id);
+    renderJob(job);
+    if (["done", "partial", "failed"].includes(job.status)) { clearInterval(timer); running = false; $("rmconfirm").value = ""; syncRemove(); syncButton($("go").textContent); renderResult(job); loadHistory(); loadWorkspaces(); }
+  } catch (e) { clearInterval(timer); running = false; syncRemove(); syncButton($("go").textContent); $("rmerr").textContent = e.message; $("rmerr").style.display = "block"; }
+}
 $("env").addEventListener("change", loadWorkspaces);
 $("workspace").addEventListener("change", () => { loadGroups(); showService(); });
 $("group").addEventListener("change", showService);

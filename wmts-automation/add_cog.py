@@ -3,6 +3,7 @@
 Stateless: everything is read from GeoServer, so it can run now, later, or resume after a failure.
 Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> bbox seed -> stray sweep.
 """
+import os
 import random
 import time
 import urllib.parse
@@ -12,14 +13,24 @@ from gwc import bbox_to_3857, seed_request, set_tile_layer_xml, wait_seed_idle
 
 ACCT = "cog://https://pigeoserverprod.blob.core.windows.net/sourceimagery/"
 # Existing store whose Azure credential block (encrypted account key + Azure range reader) is copied to new stores.
-TEMPLATE_STORE = ("COPE-S26", "codes26-01")
+TEMPLATE_STORE = tuple(os.environ.get("WMTS_TEMPLATE_STORE", "COPE-S26/codes26-01").split("/", 1))
 SEED_ZOOM = (0, 15)       # pre-seed range
 TRUNCATE_ZOOM = (0, 24)   # truncate must cover EVERY zoom: live-rendered z16+ tiles go stale at seams too
-EXPIRE_CLIENTS = 0        # seconds; 0 sends no-cache to browsers (consider raising, e.g. 86400)
+EXPIRE_CLIENTS = int(os.environ.get("WMTS_EXPIRE_CLIENTS", "600"))  # seconds browsers may reuse a tile (0 = no-cache); short because tiles change when COGs are added
 STEPS = ["workspace", "publish", "group_update", "tile_config", "truncate", "seed", "reconcile"]
 SERVICE_TYPES = ("wmts", "wms")   # wmts = cached tiles (seeded z0-15); wms = live render, no tile cache
 TYPE_KEY = "wmtsbuilder.service_type"
 TILE_STEPS = ("tile_config", "truncate", "seed")
+
+
+def group_marker(g):
+    """The service type recorded by this app on the group, or None for groups not created by it."""
+    entries = ((g.get("metadata") or {}).get("entry")) or []
+    entries = entries if isinstance(entries, list) else [entries]
+    for e in entries:
+        if e.get("@key") == TYPE_KEY:
+            return e.get("$")
+    return None
 
 
 def group_service_type(env, ws, group, g):
@@ -187,7 +198,11 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
 
     # 1. publish (store, coverage, layer), hidden from WMS listings
     start("publish")
-    src = call(env, "GET", f"/rest/workspaces/{template[0]}/coveragestores/{template[1]}.json")[1]["coverageStore"]
+    c, tpl = call(env, "GET", f"/rest/workspaces/{template[0]}/coveragestores/{template[1]}.json")
+    if c != 200 or not isinstance(tpl, dict):
+        raise RuntimeError(f"credential template store {template[0]}/{template[1]} not found (HTTP {c}). New stores copy their Azure "
+                           "credential block from it; set WMTS_TEMPLATE_STORE=workspace/store to another existing COG store.")
+    src = tpl["coverageStore"]
     stem = blob_path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     if call(env, "GET", f"/rest/workspaces/{ws}/coveragestores/{tile}.json")[0] != 200:
         sc, _ = call(env, "POST", f"/rest/workspaces/{ws}/coveragestores", {"coverageStore": {

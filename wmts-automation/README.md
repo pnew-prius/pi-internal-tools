@@ -18,7 +18,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 77 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 87 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -32,7 +32,7 @@ are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (defaul
 ## Live test suite (real DEV GeoServer; opt-in)
 ```
 set WMTS_LIVE=1
-python -m pytest live_tests -m "live and not slow" -v      # ~3 min: 9 tests
+python -m pytest live_tests -m "live and not slow" -v      # ~4 min: 10 tests
 python -m pytest live_tests -m slow -v -s                  # 54-COG WMS batch through the app (scale)
 ```
 Each test builds in a brand-new throwaway workspace (name checked against prod) and tears it down with `remove_service` (truncates the tile cache, deletes the
@@ -47,6 +47,8 @@ service (concurrent writers), kill the process mid-add then refresh, remove-serv
 | `jobs.py`, `store.py` | one-job-per-service background runner; JSON-lines history (replace with Azure Table/Blob before deploy) |
 | `remove_service.py` | remove a service properly: truncate tile cache (all zooms) BEFORE deleting; keeps layers another group still uses |
 | `live_tests/` | opt-in live suite (above) |
+| `wsgi.py`, `gunicorn.conf.py`, `startup.sh` | production entry point; ONE worker on purpose (jobs/locks are in memory) |
+| `../.github/workflows/wmts-automation-tests.yml` | runs the unit suite on Linux when pushed (this machine has no WSL/Docker) |
 | `validate.py`, `safety.py` | input rules (path/URL normalizing, no SAS/`..`), prod-name guard |
 | `tests/` | pytest suite with `fake_gs.py` (in-memory GeoServer/GWC) |
 | `gs_client.py` | requests-based REST client (custom User-Agent: the App Gateway 403s Python's default). Password: `GEOSERVER_PASS` env var, else Key Vault via `DefaultAzureCredential` (az login locally, managed identity in Azure); prod needs `allow_prod=True` |
@@ -73,7 +75,8 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 ## Open items
 - **Removing a service**: deleting a workspace/group in GeoServer does NOT delete its cached tiles (verified: 28k orphan tiles stayed in `pigeoserverprod/tilecache`). `remove_service.py` truncates first (verified live: 0 tiles left). It is not wired into the UI yet.
 - **Concurrent writers** (two App Service instances): GeoServer has no compare-and-swap; `put_member_in_group` re-reads, retries a lost creation race as an update and verifies membership/bounds afterwards, and `sync_tile_extent` re-widens the tile extent. Verified live with two simultaneous adds. For stronger guarantees use ONE instance/worker, or add a blob-lease lock on a small dedicated storage account (which the app also needs for durable history).
-- **Linux parity untested** (no WSL/Docker here): run the unit suite on a Linux CI runner or on a throwaway app on `asp-dev1`.
+- **Linux parity untested** (no WSL/Docker here). The workflow file runs the unit suite and imports `wsgi` on ubuntu as soon as the repo is pushed; the real check is the first deploy.
+- **CORS**: tile/capabilities responses carry no `Access-Control-Allow-Origin` (matters for browser-based clients such as ArcGIS Online). That is a GeoServer/App Gateway setting, not this app. Client cache time is set per service (`WMTS_EXPIRE_CLIENTS`, default 600 s).
 - A WMS-only group could get a tile layer re-created later by GeoServer; a periodic sweep (`reconcile_stray_tile_layers(..., include_group=True)`) would catch it.
 - Thorough-test plan in progress (see below). Defects found by live testing so far, all fixed with regression tests: orphaned store when a COG is unreadable;
   history race (job shown done before it was recorded); the stray-layer sweep deleted OTHER services' tile layers in the same workspace; button enabled with invalid input.
@@ -86,3 +89,10 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 - Not yet tested: replacing/removing a COG, adds spread over days, prod, ArcGIS Pro client.
 - The `geoadmin` password still sits in plaintext in `geoserver_seed_cost.py` / `gsd_cost_table.py` (outside this folder): rotate and move to Key Vault.
 - Dev test workspaces `AUTOTEST`, `WMTSTEST` and `GUITEST` still exist on dev; delete after review.
+
+## Deploying to Azure (NOT done; each needs an Azure change)
+1. Web app on `asp-dev1` (Linux, Python), startup command `sh startup.sh`. App settings: `WMTS_ENVS=dev` (do NOT set `WMTS_LOCAL`). Keep to ONE instance/worker.
+2. App Service Authentication (Microsoft Entra), restricted to a security group. The app trusts `X-MS-CLIENT-PRINCIPAL-NAME`, which is only safe behind that setting.
+3. Managed identity with `get` on secret `geoadmin` in Key Vault `pi-geoserver`.
+4. Durable history: replace `store.py`'s JSON-lines file (App Service disk is not durable) with a small dedicated storage account (Table/Blob); the same account can host a blob-lease lock if more than one instance is ever needed.
+5. Smoke test on the deployed app, then run `live_tests` pointed at it.

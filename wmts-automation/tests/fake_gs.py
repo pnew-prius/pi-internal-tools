@@ -36,6 +36,12 @@ class FakeGS:
         g = m(r"/rest/workspaces/([^/]+)/coveragestores", path)
         if g and method == "POST":
             s = body["coverageStore"]; self.stores[(g.group(1), s["name"])] = s; return 201, s["name"]
+        g = m(r"/rest/workspaces/([^/]+)", path)
+        if g and method == "DELETE":
+            w = g.group(1)
+            if any(k[0] == w for k in self.stores) or any(k[0] == w for k in self.groups):
+                return 403, "Workspace is not empty"
+            self.workspaces.discard(w); return 200, ""
         g = m(r"/rest/workspaces/([^/]+)/coveragestores/([^/]+)", path)
         if g and method == "DELETE":
             self.stores.pop((g.group(1), g.group(2)), None); self.coverages.pop((g.group(1), g.group(2)), None); return 200, ""

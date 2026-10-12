@@ -269,3 +269,37 @@ def test_too_narrow_tile_extent_is_widened_to_the_group_bounds(fake):
     set_tile_layer_xml("dev", f"{WS}:{G}", narrow)
     assert sync_tile_extent("dev", WS, G) is True                       # widened back to the group's bounds
     assert sync_tile_extent("dev", WS, G) is False
+
+
+# ---------------------------------------------------------------- client cache, template store, remove with progress
+def test_tile_layer_tells_browsers_to_cache_tiles_for_a_while(fake):
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    assert "<expireClients>600</expireClients>" in fake.gwc[f"{WS}:{G}"]
+
+
+def test_missing_credential_template_store_gives_an_actionable_error(fake):
+    fake.workspaces.add(WS)
+    fake.stores.pop(("COPE-S26", "codes26-01"))
+    with pytest.raises(RuntimeError, match="WMTS_TEMPLATE_STORE"):
+        add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+
+
+def test_remove_reports_progress_and_deletes_an_empty_workspace(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "A", "t-01", "Cust/proj/t-01-RGB.tif")
+    seen = []
+    out = rs.remove_service("dev", WS, "A", progress=lambda s, st, *a: seen.append((s, st)), delete_empty_workspace=True)
+    assert [s for s, st in seen if st == "done"] == rs.REMOVE_STEPS and out["workspace_deleted"] and WS not in fake.workspaces
+
+
+def test_remove_keeps_a_workspace_that_still_has_other_services(fake, monkeypatch):
+    import remove_service as rs
+    monkeypatch.setattr(rs, "call", fake.call)
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, "A", "t-01", "Cust/proj/t-01-RGB.tif")
+    add_cog("dev", WS, "B", "t-02", "Cust/proj/t-02-RGB.tif")
+    out = rs.remove_service("dev", WS, "A", delete_empty_workspace=True)
+    assert out["workspace_deleted"] is False and WS in fake.workspaces and group_state("dev", WS, "B") is not None

@@ -6,6 +6,7 @@ import time
 import uuid
 
 import add_cog as add_cog_mod
+import remove_service as remove_mod
 from add_cog import STEPS
 
 
@@ -41,6 +42,49 @@ class JobManager:
             threading.Thread(target=self._run, args=(job, create_workspace), daemon=True).start()
         return job
 
+    def submit_remove(self, user, env, workspace, group, run=True):
+        """Remove a whole service (tile cache first). One job per service, same lock as adds."""
+        key = (env, workspace, group)
+        with self._lock:
+            if key in self._active:
+                raise Busy(f"Another job is already running for {workspace}:{group}. Wait for it to finish.")
+            self._active.add(key)
+            steps = [{"name": n, "status": "pending", "seconds": None, "detail": None} for n in remove_mod.REMOVE_STEPS]
+            job = {"id": uuid.uuid4().hex[:12], "user": user, "env": env, "workspace": workspace, "group": group, "kind": "remove",
+                   "status": "queued", "created": time.time(), "refresh": False, "service": None, "current": None,
+                   "items": [{"index": 0, "tile": "(remove service)", "blob_path": "", "status": "pending", "steps": steps,
+                              "result": None, "error": None, "seconds": None}],
+                   "counts": {"total": 1, "done": 0, "skipped": 0, "failed": 0}}
+            self.jobs[job["id"]] = job
+        if run:
+            threading.Thread(target=self._run_remove, args=(job,), daemon=True).start()
+        return job
+
+    def _run_remove(self, job):
+        job["status"], job["started"] = "running", time.time()
+        item = job["items"][0]
+        item["status"], item["started"] = "running", time.time()
+        final = "failed"
+        try:
+            out = remove_mod.remove_service(job["env"], job["workspace"], job["group"], progress=self._progress(item), delete_empty_workspace=True)
+            item["result"], item["status"], final = out, "done", "done"
+            job["counts"]["done"] += 1
+        except Exception as e:
+            item["status"], item["error"] = "failed", str(e)[:500]
+            job["counts"]["failed"] += 1
+            for s in item["steps"]:
+                if s["status"] == "running":
+                    s["status"] = "failed"
+        finally:
+            item["finished"] = time.time()
+            item["seconds"] = round(item["finished"] - item["started"], 1)
+            job["finished"] = time.time()
+            with self._lock:
+                self._active.discard((job["env"], job["workspace"], job["group"]))
+            job["current"] = None
+            self._record(job, item)
+            job["status"] = final
+
     @staticmethod
     def _progress(item):
         def cb(step, status, seconds=None, detail=None):
@@ -52,7 +96,7 @@ class JobManager:
     def _record(self, job, item):
         """One history row per COG, saved as soon as that COG finishes (a crash mid-batch keeps what was done)."""
         self.store.save({"id": f"{job['id']}-{item['index']}", "batch": job["id"], "user": job["user"], "env": job["env"],
-                         "workspace": job["workspace"], "group": job["group"], "service": job["service"], "tile": item["tile"], "blob_path": item["blob_path"],
+                         "workspace": job["workspace"], "group": job["group"], "service": job["service"], "kind": job.get("kind", "add"), "tile": item["tile"], "blob_path": item["blob_path"],
                          "status": item["status"], "error": item["error"], "created": job["created"],
                          "started": item.get("started"), "finished": item.get("finished"), "seconds": item["seconds"],
                          "batch_size": job["counts"]["total"]})
