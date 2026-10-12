@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WMTS Service Builder</title>
+<title>Map Service Builder</title>
 <style>
   :root { --navy:#1F3D32; --teal:#1E6F5C; --amber:#E3B23C; --rust:#C1502E; --mint:#F2F6F4; --sage:#9AA5A1; --ink:#0B0B0B; --line:#d9e1dd; }
   * { box-sizing: border-box; }
@@ -43,6 +43,10 @@
   li.skipped .dot { border-style:dashed; }
   @keyframes spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { li.running .dot { animation:none; } }
+  .urlrow { display:grid; grid-template-columns:1fr auto; gap:8px; margin:4px 0 12px; }
+  .urlrow input { font-family:Consolas,monospace; font-size:12px; background:#fff; }
+  .urlrow button { padding:6px 14px; }
+  .urllabel { font-size:12px; font-weight:700; color:var(--teal); text-transform:uppercase; letter-spacing:.5px; margin-top:8px; }
   .secs { font-size:12px; color:#595959; font-variant-numeric:tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
@@ -55,7 +59,7 @@
 </head>
 <body>
 <header>
-  <div><div class="brand">PRIUS INTELLI</div><h1>WMTS Service Builder</h1></div>
+  <div><div class="brand">PRIUS INTELLI</div><h1>Map Service Builder <span style="font-weight:400;font-size:13px;color:#bfe3d6">WMTS / WMS</span></h1></div>
   <div class="who">Signed in as <strong id="user">{{ user }}</strong></div>
 </header>
 <main>
@@ -77,6 +81,11 @@
         <input type="text" id="group" list="grlist" required placeholder="e.g. WW26-All">
         <datalist id="grlist"></datalist>
         <p class="hint" id="svcinfo">Pick an existing service or type a new name.</p>
+      </div>
+      <div>
+        <label for="stype">Service type</label>
+        <select id="stype"><option value="wmts">WMTS - cached tiles (fast)</option><option value="wms">WMS - live render, no tile cache</option></select>
+        <p class="hint" id="stypehint">WMTS pre-builds tiles for zoom 0-15; WMS renders live on every request.</p>
       </div>
       <div class="full">
         <label for="blob">COG blob paths <span style="font-weight:400">(one per line; one is fine)</span></label>
@@ -132,10 +141,29 @@ async function showService() {
   const ws = $("workspace").value.trim(), g = $("group").value.trim(); if (!ws || !g) return;
   try {
     const s = await api("/api/service?env=" + $("env").value + "&workspace=" + encodeURIComponent(ws) + "&group=" + encodeURIComponent(g));
-    $("svcinfo").textContent = s.exists ? ("Existing service with " + s.members + " COGs.") : "New service - it will be created with this COG.";
+    $("stype").disabled = s.exists;
+    if (s.exists) { $("stype").value = s.service_type; $("stypehint").textContent = "This service is " + s.service_type.toUpperCase() + "; a service keeps the type it was created with."; }
+    else { $("stypehint").textContent = "WMTS pre-builds tiles for zoom 0-15; WMS renders live on every request."; }
+    $("svcinfo").textContent = s.exists ? ("Existing " + s.service_type.toUpperCase() + " service with " + s.members + " COGs.") : "New service - it will be created with this COG.";
   } catch (e) { $("svcinfo").textContent = ""; }
 }
 
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = old; }, 1500);
+}
+function urlRow(label, url, note) {
+  const wrap = el("div");
+  wrap.append(el("div", label, "urllabel"));
+  const row = el("div", undefined, "urlrow");
+  const inp = document.createElement("input"); inp.type = "text"; inp.readOnly = true; inp.value = url; inp.setAttribute("aria-label", label);
+  inp.addEventListener("focus", () => inp.select());
+  const btn = el("button", "Copy"); btn.type = "button"; btn.onclick = () => copyText(url, btn);
+  row.append(inp, btn); wrap.append(row);
+  if (note) wrap.append(el("div", note, "hint"));
+  return wrap;
+}
 function renderStepList(item) {
   $("steps").replaceChildren(...item.steps.map(s => {
     const li = el("li", undefined, s.status);
@@ -166,9 +194,14 @@ function renderResult(job) {
   box.append(el("strong", c.failed ? (c.done || c.skipped ? "Finished with problems. " : "Nothing was added. ") : "Done. "),
              el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
   const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
-  if (c.done) api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
-    const a = el("a", s.capabilities_url); a.href = s.capabilities_url; a.target = "_blank"; a.rel = "noopener";
-    const q = el("p"); q.append("WMTS capabilities URL: ", a); box.append(q);
+  if (c.done || c.skipped) api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
+    const urls = el("div"); urls.append(el("h2", "Service URLs"));
+    urls.append(urlRow("WMS capabilities URL", s.wms_url, s.service_type === "wms" ? "Live render on every request (no tile cache)." : "The same service also answers WMS (live render)."));
+    if (s.wmts_url) {
+      urls.append(urlRow("WMTS capabilities URL", s.wmts_url, "Cached tiles, zoom 0-15 (deeper zooms render live on first request). PNG only."));
+      urls.append(urlRow("WMTS tile URL template", s.tile_url_template, "For clients that take a raw tile URL. Replace {z}, {y} (row) and {x} (column)."));
+    } else { urls.append(el("p", "No WMTS: this is a WMS-only service with no tile cache.", "hint")); }
+    box.append(urls);
   }).catch(() => {});
   if (c.failed) {
     const failed = job.items.filter(i => i.status === "failed");
@@ -191,14 +224,14 @@ async function loadHistory() {
     const rows = [];
     (running || []).forEach(r => {
       const tr = el("tr"), st = el("td"); st.append(el("span", r.status, "pill"));
-      tr.append(el("td", "now"), el("td", r.user), el("td", r.workspace + ":" + r.group), el("td", "batch of " + r.counts.total), st, el("td", ""));
+      tr.append(el("td", "now"), el("td", r.user), el("td", r.workspace + ":" + r.group + (r.service ? " (" + r.service.toUpperCase() + ")" : "")), el("td", "batch of " + r.counts.total), st, el("td", ""));
       rows.push(tr);
     });
     jobs.forEach(j => {
       const tr = el("tr"), d = new Date((j.finished || j.created || 0) * 1000);
       const st = el("td"); st.append(el("span", j.status, "pill" + (j.status === "failed" ? " failed" : "")));
       const tile = el("td", j.tile); if (j.error) tile.title = j.error;
-      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group), tile, st, el("td", j.seconds != null ? j.seconds.toFixed(0) + " s" : ""));
+      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group + (j.service ? " (" + j.service.toUpperCase() + ")" : "")), tile, st, el("td", j.seconds != null ? j.seconds.toFixed(0) + " s" : ""));
       rows.push(tr);
     });
     $("history").replaceChildren(...rows);
@@ -233,7 +266,7 @@ $("form").addEventListener("submit", async (ev) => {
   try {
     const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
-                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked }) });
+                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value }) });
     $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.counts.total + " COG(s) into " + job.workspace + ":" + job.group;
     renderJob(job); timer = setInterval(() => poll(job.id), 1000);
   } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }

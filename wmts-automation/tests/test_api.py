@@ -188,4 +188,45 @@ def test_service_endpoint_reports_members_and_capabilities_url(client):
 def test_index_page_renders_with_user(client):
     c, *_ = client
     r = c.get("/", headers=H)
-    assert r.status_code == 200 and b"someone@priusintelli.com" in r.data and b"WMTS Service Builder" in r.data and b"<textarea" in r.data
+    assert r.status_code == 200 and b"someone@priusintelli.com" in r.data and b"Map Service Builder" in r.data and b"<textarea" in r.data
+
+
+def test_wms_job_via_api_runs_without_seeding(client):
+    c, mgr, fake = client
+    j = wait(c, post(c, dict(BODY, service_type="wms")).get_json()["job"]["id"])
+    assert j["status"] == "done" and j["service"] == "wms" and fake.seeds == []
+    assert [s["status"] for s in j["items"][0]["steps"] if s["name"] in ("tile_config", "truncate", "seed")] == ["skipped"] * 3
+
+
+def test_unknown_service_type_is_a_400(client):
+    c, *_ = client
+    assert post(c, dict(BODY, service_type="wfs")).status_code == 400
+
+
+def test_mixing_types_in_one_service_fails_the_cog_with_a_clear_message(client):
+    c, *_ = client
+    wait(c, post(c, BODY).get_json()["job"]["id"])
+    j = wait(c, post(c, dict(BODY, blob_text="Cust/proj/t-02-RGB.tif", service_type="wms")).get_json()["job"]["id"])
+    assert j["status"] == "failed" and "is a WMTS service" in j["items"][0]["error"]
+
+
+def test_service_urls_for_a_wmts_service(client):
+    c, *_ = client
+    wait(c, post(c, BODY).get_json()["job"]["id"])
+    s = c.get("/api/service?workspace=TESTWS&group=Svc", headers=H).get_json()
+    assert s["service_type"] == "wmts" and s["wms_url"].endswith("/TESTWS/ows?service=WMS&request=GetCapabilities&version=1.3.0")
+    assert s["wmts_url"].endswith("/TESTWS/gwc/service/wmts?REQUEST=GetCapabilities")
+    assert "LAYER=TESTWS:Svc" in s["tile_url_template"] and "{z}" in s["tile_url_template"] and "{x}" in s["tile_url_template"]
+
+
+def test_service_urls_for_a_wms_service_have_no_wmts(client):
+    c, *_ = client
+    wait(c, post(c, dict(BODY, service_type="wms")).get_json()["job"]["id"])
+    s = c.get("/api/service?workspace=TESTWS&group=Svc", headers=H).get_json()
+    assert s["service_type"] == "wms" and s["wmts_url"] is None and s["tile_url_template"] is None and "ows?service=WMS" in s["wms_url"]
+
+
+def test_page_has_service_type_and_copyable_url_support(client):
+    c, *_ = client
+    html = c.get("/", headers=H).data
+    assert b'id="stype"' in html and b"copyText" in html and b"WMS capabilities URL" in html and b"WMTS tile URL template" in html

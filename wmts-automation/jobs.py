@@ -24,7 +24,7 @@ class JobManager:
         self._active = set()
         self._lock = threading.Lock()
 
-    def submit(self, user, env, workspace, group, items, create_workspace=False, refresh=False, run=True):
+    def submit(self, user, env, workspace, group, items, create_workspace=False, refresh=False, service="wmts", run=True):
         """items: [{'tile':..., 'path':...}, ...] in the order to add them."""
         key = (env, workspace, group)
         with self._lock:
@@ -32,7 +32,7 @@ class JobManager:
                 raise Busy(f"Another add is already running for {workspace}:{group}. Wait for it to finish.")
             self._active.add(key)
             job = {"id": uuid.uuid4().hex[:12], "user": user, "env": env, "workspace": workspace, "group": group,
-                   "status": "queued", "created": time.time(), "refresh": refresh, "current": None,
+                   "status": "queued", "created": time.time(), "refresh": refresh, "service": service, "current": None,
                    "items": [{"index": i, "tile": it["tile"], "blob_path": it["path"], "status": "pending", "steps": _blank_steps(),
                               "result": None, "error": None, "seconds": None} for i, it in enumerate(items)],
                    "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}}
@@ -52,7 +52,7 @@ class JobManager:
     def _record(self, job, item):
         """One history row per COG, saved as soon as that COG finishes (a crash mid-batch keeps what was done)."""
         self.store.save({"id": f"{job['id']}-{item['index']}", "batch": job["id"], "user": job["user"], "env": job["env"],
-                         "workspace": job["workspace"], "group": job["group"], "tile": item["tile"], "blob_path": item["blob_path"],
+                         "workspace": job["workspace"], "group": job["group"], "service": job["service"], "tile": item["tile"], "blob_path": item["blob_path"],
                          "status": item["status"], "error": item["error"], "created": job["created"],
                          "started": item.get("started"), "finished": item.get("finished"), "seconds": item["seconds"],
                          "batch_size": job["counts"]["total"]})
@@ -66,7 +66,8 @@ class JobManager:
                 item["status"], item["started"] = "running", time.time()
                 try:
                     m = add_cog_mod.add_cog(job["env"], job["workspace"], job["group"], item["tile"], item["blob_path"],
-                                            progress=self._progress(item), create_workspace=create_workspace, refresh=job["refresh"])
+                                            progress=self._progress(item), create_workspace=create_workspace, refresh=job["refresh"],
+                                            service=job["service"])
                     if m.get("skipped"):
                         for s in item["steps"]:
                             if s["status"] == "pending":

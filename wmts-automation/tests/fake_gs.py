@@ -77,6 +77,8 @@ class FakeGS:
         g = m(r"/gwc/rest/layers/(.+)\.json", path)
         if g and method == "DELETE":
             self.gwc.pop(g.group(1), None); return 200, "deleted"
+        if g and method == "GET":
+            return (200, {"GeoServerLayer": {"name": g.group(1)}}) if g.group(1) in self.gwc else (500, "Unknown layer")
         g = m(r"/gwc/rest/seed/(.+)\.json", path)
         if g and method == "POST":
             self.seeds.append((body["seedRequest"]["type"], body["seedRequest"]["zoomStart"], body["seedRequest"]["zoomStop"],

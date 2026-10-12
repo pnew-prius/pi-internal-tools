@@ -10,7 +10,7 @@ import re
 from flask import Flask, jsonify, render_template, request
 
 import safety
-from add_cog import group_state
+from add_cog import SERVICE_TYPES, group_service_type, group_state
 from gs_client import call
 from jobs import Busy, JobManager
 from store import JsonlStore
@@ -94,8 +94,14 @@ def create_app(manager=None):
         group = check_name("Service", request.args.get("group"))
         st = group_state(env, ws, group)
         host = PUBLIC_HOSTS[env]
-        return jsonify(exists=st is not None, members=len(st[1]) if st else 0,
-                       layer=f"{ws}:{group}", capabilities_url=f"https://{host}/{ws}/gwc/service/wmts?REQUEST=GetCapabilities")
+        stype = group_service_type(env, ws, group, st[0]) if st else None
+        urls = {"wmts": f"https://{host}/{ws}/gwc/service/wmts?REQUEST=GetCapabilities",
+                "wms": f"https://{host}/{ws}/ows?service=WMS&request=GetCapabilities&version=1.3.0"}
+        tile = (f"https://{host}/gwc/service/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&LAYER={ws}:{group}&STYLE="
+                "&TILEMATRIXSET=EPSG:3857&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png")
+        return jsonify(exists=st is not None, members=len(st[1]) if st else 0, service_type=stype, layer=f"{ws}:{group}",
+                       capabilities_url=urls.get(stype, urls["wmts"]), wms_url=urls["wms"],
+                       wmts_url=urls["wmts"] if stype == "wmts" else None, tile_url_template=tile if stype == "wmts" else None)
 
     def json_body():
         # Require application/json: a cross-site HTML form can only send form/text content types, so this blocks CSRF.
@@ -119,6 +125,9 @@ def create_app(manager=None):
         env = env_or_400()
         ws = check_name("Workspace", body.get("workspace"))
         group = check_name("Service", body.get("group"))
+        service = (body.get("service_type") or "wmts").lower()
+        if service not in SERVICE_TYPES:
+            raise ValidationError(f"Service type must be one of: {', '.join(SERVICE_TYPES)}.")
         items, errors = parse_batch(batch_text(body))
         if errors:
             return jsonify(error=f"{len(errors)} problem(s) in the COG list; nothing was started.", problems=errors), 400
@@ -130,7 +139,7 @@ def create_app(manager=None):
             return jsonify(error=str(e)), 503
         try:
             job = mgr.submit(current_user(), env, ws, group, [{"tile": i["tile"], "path": i["path"]} for i in items],
-                             create_workspace=bool(body.get("create_workspace")), refresh=bool(body.get("refresh")))
+                             create_workspace=bool(body.get("create_workspace")), refresh=bool(body.get("refresh")), service=service)
         except Busy as e:
             return jsonify(error=str(e)), 409
         return jsonify(job=job), 202
@@ -145,7 +154,7 @@ def create_app(manager=None):
     @app.get("/api/jobs")
     def history():
         live = [{"id": j["id"], "user": j["user"], "workspace": j["workspace"], "group": j["group"], "status": j["status"],
-                 "created": j["created"], "counts": j["counts"]} for j in mgr.jobs.values() if j["status"] in ("queued", "running")]
+                 "created": j["created"], "counts": j["counts"], "service": j.get("service")} for j in mgr.jobs.values() if j["status"] in ("queued", "running")]
         return jsonify(running=live, jobs=mgr.store.recent(60))
 
     return app

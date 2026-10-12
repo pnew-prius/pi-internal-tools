@@ -16,6 +16,19 @@ SEED_ZOOM = (0, 15)       # pre-seed range
 TRUNCATE_ZOOM = (0, 24)   # truncate must cover EVERY zoom: live-rendered z16+ tiles go stale at seams too
 EXPIRE_CLIENTS = 0        # seconds; 0 sends no-cache to browsers (consider raising, e.g. 86400)
 STEPS = ["workspace", "publish", "group_update", "tile_config", "truncate", "seed", "reconcile"]
+SERVICE_TYPES = ("wmts", "wms")   # wmts = cached tiles (seeded z0-15); wms = live render, no tile cache
+TYPE_KEY = "wmtsbuilder.service_type"
+TILE_STEPS = ("tile_config", "truncate", "seed")
+
+
+def group_service_type(env, ws, group, g):
+    """Type recorded on the group when it was created; for groups made by hand, WMTS if it has a tile layer else WMS."""
+    entries = ((g.get("metadata") or {}).get("entry")) or []
+    entries = entries if isinstance(entries, list) else [entries]
+    for e in entries:
+        if e.get("@key") == TYPE_KEY:
+            return e.get("$")
+    return "wmts" if call(env, "GET", f"/gwc/rest/layers/{ws}:{group}.json")[0] == 200 else "wms"
 
 
 def group_state(env, ws, group):
@@ -33,9 +46,10 @@ def workspace_exists(env, ws):
     return c == 200
 
 
-def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
+def reconcile_stray_tile_layers(env, ws, group, settle_sec=3, include_group=False):
     """GeoServer re-creates a per-layer tile layer in the background after a layer is published. Only the group
     should be tiled/advertised, so delete the others. Run after every add, and as a periodic sweep.
+    include_group=True (WMS-only services) also removes the group's own tile layer, which GeoServer auto-creates.
     Returns the list of deleted tile layers."""
     time.sleep(settle_sec)
     deleted = []
@@ -48,7 +62,7 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
         groups = {x["name"] for x in lg["layerGroup"]} if isinstance(lg, dict) else set()
         r = call(env, "GET", "/gwc/rest/layers.json")[1]
         names = [x if isinstance(x, str) else x.get("name") for x in (r if isinstance(r, list) else [])]
-        stray = [n for n in names if n and n.startswith(f"{ws}:") and n.split(":", 1)[1] not in groups]
+        stray = [n for n in names if n and n.startswith(f"{ws}:") and (n.split(":", 1)[1] not in groups or (include_group and n == f"{ws}:{group}"))]
         for n in stray:
             call(env, "DELETE", f"/gwc/rest/layers/{n}.json")
             deleted.append(n)
@@ -58,14 +72,17 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
     return deleted
 
 
-def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False, refresh=False):
+def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False, refresh=False, service="wmts"):
     """blob_path: path inside the sourceimagery container, e.g. 'Customer/project/tile-RGB.tif'.
     A COG already in the group is skipped, unless refresh=True: then its extent/truncate/seed are redone (repairs a failed add
     or picks up a replaced file).
     progress(step, status, seconds=None, detail=None) is called as each step starts ('running') and ends ('done').
+    service: "wmts" (cached tiles) or "wms" (live render, no tile cache). A group keeps the type it was created with.
     Returns a metrics dict."""
+    if service not in SERVICE_TYPES:
+        raise ValueError(f"service must be one of {SERVICE_TYPES}")
     L = f"{ws}:{group}"
-    m = {"tile": tile, "steps": {}}
+    m = {"tile": tile, "steps": {}, "service": service}
     T = time.time()
     clock = {}
 
@@ -91,6 +108,11 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
     done("workspace", "created" if m.get("workspace_created") else "exists")
 
     state = group_state(env, ws, group)
+    if state:
+        existing = group_service_type(env, ws, group, state[0])
+        if existing != service:
+            raise RuntimeError(f"'{group}' is a {existing.upper()} service, so it cannot take a {service.upper()} add. "
+                               "Use a different service name (a service keeps the type it was created with).")
     already = bool(state and tile in state[1])
     if already and not refresh:
         m["skipped"] = "already a member"
@@ -133,6 +155,7 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
         body = {"layerGroup": {"name": group, "title": group, "mode": "SINGLE", "workspace": {"name": ws},
                                "publishables": {"published": [{"@type": "layer", "name": f"{ws}:{tile}"}]},
                                "styles": {"style": [{"name": "raster"}]},
+                               "metadata": {"entry": [{"@key": TYPE_KEY, "$": service}]},
                                "bounds": {"minx": bounds[0], "miny": bounds[1], "maxx": bounds[2], "maxy": bounds[3],
                                           "crs": {"@class": "projected", "$": "EPSG:3857"}}}}
         c, r = call(env, "POST", f"/rest/workspaces/{ws}/layergroups", body)
@@ -153,26 +176,31 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
     m["group_bounds_3857"] = bounds
     done("group_update", m["group_action"])
 
-    # 3. tile layer: EPSG:3857 only, PNG only, extent = group bounds (not auto-updated when members are added)
-    start("tile_config")
-    c, r = set_tile_layer_xml(env, L, bounds, formats=("image/png",), gridset="EPSG:3857", expire_clients=EXPIRE_CLIENTS)
-    if c != 200:
-        raise RuntimeError(f"tile layer config failed {c} {str(r)[:200]}")
-    done("tile_config")
+    if service == "wms":  # live render: nothing to configure, truncate or seed
+        for s in TILE_STEPS:
+            if progress:
+                progress(s, "skipped", None, "not needed for WMS")
+    else:
+        # 3. tile layer: EPSG:3857 only, PNG only, extent = group bounds (not auto-updated when members are added)
+        start("tile_config")
+        c, r = set_tile_layer_xml(env, L, bounds, formats=("image/png",), gridset="EPSG:3857", expire_clients=EXPIRE_CLIENTS)
+        if c != 200:
+            raise RuntimeError(f"tile layer config failed {c} {str(r)[:200]}")
+        done("tile_config")
 
-    # 4. truncate the new footprint (all zooms), 5. seed what is missing there (z0-15)
-    start("truncate")
-    seed_request(env, L, "truncate", fp, TRUNCATE_ZOOM[0], TRUNCATE_ZOOM[1], threads=1)
-    wait_seed_idle(env, L)
-    done("truncate")
-    start("seed")
-    seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=4)
-    m["tiles_job_total"] = wait_seed_idle(env, L)
-    done("seed", f"{m['tiles_job_total']} tiles")
+        # 4. truncate the new footprint (all zooms), 5. seed what is missing there (z0-15)
+        start("truncate")
+        seed_request(env, L, "truncate", fp, TRUNCATE_ZOOM[0], TRUNCATE_ZOOM[1], threads=1)
+        wait_seed_idle(env, L)
+        done("truncate")
+        start("seed")
+        seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=4)
+        m["tiles_job_total"] = wait_seed_idle(env, L)
+        done("seed", f"{m['tiles_job_total']} tiles")
 
     # 6. only the group may be tiled/advertised
     start("reconcile")
-    m["stray_tile_layers_removed"] = reconcile_stray_tile_layers(env, ws, group)
+    m["stray_tile_layers_removed"] = reconcile_stray_tile_layers(env, ws, group, include_group=(service == "wms"))
     done("reconcile", f"{len(m['stray_tile_layers_removed'])} removed")
 
     m["total_sec"] = round(time.time() - T, 2)

@@ -18,13 +18,14 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 56 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 68 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
 The page: choose environment, workspace, service (layer group), paste one or many COG blob paths (one per line; paths or full blob URLs), Add.
 The list is validated as you type (line numbers, duplicates, clashing layer names, max 100); nothing starts until it is clean. COGs are added one at a time
 in pasted order and a failed COG does NOT stop the rest (job ends done / partial / failed; one history row per COG; failed ones can be put back in the box).
+**Service type:** WMTS (cached tiles: tile config, bounded truncate, seed z0-15; PNG only) or WMS (live render, no tile cache: same publish + group steps, never keeps a tile layer for the group). A group records its type in group metadata (`wmtsbuilder.service_type`) and keeps it: adding a WMS COG to a WMTS service (or the reverse) is refused. On completion the page shows copyable URLs: WMS capabilities, and for WMTS also the capabilities URL and a tile URL template ({z},{y},{x}).
 COGs already in the service are skipped unless 'Refresh' is ticked (re-runs tile config, truncate and seed: repairs a failed add or picks up a replaced file). One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
 are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (default `dev`). A failed add removes anything it created.
 
@@ -57,6 +58,8 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 9. `az storage blob list` silently caps at 5,000 unless `--num-results` is raised. Tiles are keyed in blob by the group's internal ID.
 
 ## Open items
+- **Removing a service**: deleting a workspace/group in GeoServer does NOT delete its cached tiles (verified: 28k orphan tiles stayed in `pigeoserverprod/tilecache`). A future 'remove service' action must truncate the tile cache first (all zooms), then delete. Test tiles were removed by prefix (group internal ID) with `az storage blob delete-batch`.
+- A WMS-only group could get a tile layer re-created later by GeoServer; a periodic sweep (`reconcile_stray_tile_layers(..., include_group=True)`) would catch it.
 - Thorough-test plan in progress (see below). Defects found by live testing so far, all fixed with regression tests: orphaned store when a COG is unreadable;
   history race (job shown done before it was recorded); the stray-layer sweep deleted OTHER services' tile layers in the same workspace; button enabled with invalid input.
 - Seed time grows with group size (first 10 adds 9 s -> last 10 adds 22 s); re-measure at larger sizes.
