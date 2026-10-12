@@ -1,0 +1,157 @@
+{
+ "adds_ok": 54,
+ "adds_failed": [],
+ "elapsed_sec": 1397.1,
+ "step_publish": {
+  "mean": 1.47,
+  "median": 1.46,
+  "max": 1.9,
+  "total": 79.5
+ },
+ "step_group_update": {
+  "mean": 0.24,
+  "median": 0.23,
+  "max": 0.5,
+  "total": 12.7
+ },
+ "step_tile_config": {
+  "mean": 0.22,
+  "median": 0.21,
+  "max": 0.45,
+  "total": 11.6
+ },
+ "step_truncate": {
+  "mean": 3.92,
+  "median": 3.47,
+  "max": 8.47,
+  "total": 211.4
+ },
+ "step_seed": {
+  "mean": 16.38,
+  "median": 14.74,
+  "max": 34.12,
+  "total": 884.7
+ },
+ "per_add_wall": {
+  "mean": 25.9,
+  "median": 24.2,
+  "min": 11.0,
+  "max": 44.4
+ },
+ "trend_first10_vs_last10": {
+  "seed_mean": [
+   9.3,
+   21.9
+  ],
+  "group_update_mean": [
+   0.24,
+   0.26
+  ],
+  "total_mean": [
+   15.9,
+   34.8
+  ]
+ },
+ "tiles_job_total_sum": 37406,
+ "adds_with_adjoining_neighbors": 43,
+ "adjoining_pairs": 57,
+ "kinds": {
+  "overlap": 56,
+  "touch": 1
+ },
+ "seam_checks": {
+  "total": 112,
+  "match_truth": 112,
+  "mismatch": []
+ },
+ "new_center_checks": {
+  "total": 108,
+  "http200_hit": 108,
+  "nonblank_gt0": 94
+ },
+ "gwc_layer_id": "LayerGroupInfoImpl--55c54717:1a10dadcdf3:ccb",
+ "tiles_stored": {
+  "total_tiles": 19126,
+  "total_MB": 189.9,
+  "formats": {
+   "png": 19126
+  },
+  "gridsets": {
+   "EPSG:3857": 19126
+  },
+  "by_zoom": {
+   "0": {
+    "tiles": 1,
+    "MB": 0.0
+   },
+   "1": {
+    "tiles": 1,
+    "MB": 0.0
+   },
+   "2": {
+    "tiles": 1,
+    "MB": 0.0
+   },
+   "3": {
+    "tiles": 1,
+    "MB": 0.0
+   },
+   "4": {
+    "tiles": 1,
+    "MB": 0.0
+   },
+   "5": {
+    "tiles": 4,
+    "MB": 0.01
+   },
+   "6": {
+    "tiles": 6,
+    "MB": 0.01
+   },
+   "7": {
+    "tiles": 14,
+    "MB": 0.03
+   },
+   "8": {
+    "tiles": 33,
+    "MB": 0.08
+   },
+   "9": {
+    "tiles": 69,
+    "MB": 0.21
+   },
+   "10": {
+    "tiles": 111,
+    "MB": 0.47
+   },
+   "11": {
+    "tiles": 266,
+    "MB": 1.31
+   },
+   "12": {
+    "tiles": 593,
+    "MB": 3.58
+   },
+   "13": {
+    "tiles": 1449,
+    "MB": 11.11
+   },
+   "14": {
+    "tiles": 4120,
+    "MB": 37.72
+   },
+   "15": {
+    "tiles": 12456,
+    "MB": 135.32
+   }
+  }
+ },
+ "dev_vm": [
+  "/subscriptions/fa7f37c0-b488-4dee-81b1-a00a4e0da4bd/resourceGroups/RG_GEOSERVER_DEV_SOUTHCENTRALUS/providers/Microsoft.Compute/virtualMachines/pi-geosvrd01"
+ ],
+ "vm_cpu": {
+  "minutes": 23,
+  "avg_of_avg": 9.5,
+  "peak": 17.8
+ }
+}
