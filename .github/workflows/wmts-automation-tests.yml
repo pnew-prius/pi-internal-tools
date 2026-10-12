@@ -6,7 +6,7 @@ on:
     paths: ["wmts-automation/**"]
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: ubuntu-latest moves to Ubuntu 26 on 2026-10-19
     defaults:
       run:
         working-directory: wmts-automation
