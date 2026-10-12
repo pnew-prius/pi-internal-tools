@@ -1,39 +1,67 @@
-"""Minimal GeoServer / GWC REST client (curl-based: the App Gateway rejects Python's urllib).
+"""Minimal GeoServer / GWC REST client (requests-based, portable to Linux App Service).
 
-Credentials come from the GEOSERVER_PASS environment variable (never from source). Prod calls must be
-requested explicitly with allow_prod=True.
+The App Gateway returns 403 to Python's default User-Agent, so every request sends a custom one.
+Credential: GEOSERVER_PASS env var if set, otherwise the `geoadmin` secret in the `pi-geoserver` Key Vault, read with
+DefaultAzureCredential (your `az login` locally, the app's managed identity in Azure). Never hard-coded.
+Prod calls must be requested explicitly with allow_prod=True.
 """
 import json
 import os
-import subprocess
+import threading
+
+import requests
 
 HOSTS = {"dev": "devimageservices.priusintelli.com", "prod": "imageadmin.priusintelli.com"}
 USER = os.environ.get("GEOSERVER_USER", "geoadmin")
+USER_AGENT = "wmts-automation/1.0"
+_tls = threading.local()
+_secret = {"value": None}
 
 
 def _password():
     pw = os.environ.get("GEOSERVER_PASS")
-    if not pw:
-        raise RuntimeError("Set the GEOSERVER_PASS environment variable (do not hard-code the password).")
-    return pw
+    if pw:
+        return pw
+    if _secret["value"]:
+        return _secret["value"]
+    vault = os.environ.get("GEOSERVER_KEYVAULT", "pi-geoserver")
+    name = os.environ.get("GEOSERVER_SECRET", "geoadmin")
+    try:
+        from azure.identity import DefaultAzureCredential
+        from azure.keyvault.secrets import SecretClient
+        _secret["value"] = SecretClient(f"https://{vault}.vault.azure.net", DefaultAzureCredential()).get_secret(name).value
+    except Exception as e:
+        raise RuntimeError(f"Could not read the GeoServer credential from Key Vault '{vault}' ({type(e).__name__}). "
+                           "Run `az login`, or set GEOSERVER_PASS for local testing.") from e
+    return _secret["value"]
+
+
+def _session():
+    if not hasattr(_tls, "s"):
+        _tls.s = requests.Session()
+        _tls.s.headers["User-Agent"] = USER_AGENT
+    return _tls.s
 
 
 def call(env, method, path, body=None, ctype="application/json", accept="application/json", timeout=180, allow_prod=False):
-    """Returns (http_status, parsed_json_or_text). Root context path: use /rest/... and /gwc/rest/..., not /geoserver/..."""
+    """Returns (http_status, parsed_json_or_text); (0, message) on a connection failure.
+    Root context path: use /rest/... and /gwc/rest/..., not /geoserver/..."""
     if env == "prod" and not allow_prod:
         raise PermissionError("prod access requires allow_prod=True")
     if env not in HOSTS:
         raise ValueError(f"unknown env {env!r}")
-    cmd = ["curl.exe", "-s", "--max-time", str(timeout), "-u", f"{USER}:{_password()}", "-X", method,
-           "-H", f"Accept: {accept}", "-w", "\n__HTTP__%{http_code}", f"https://{HOSTS[env]}{path}"]
+    headers = {"Accept": accept}
     data = None
     if body is not None:
-        cmd[1:1] = ["-H", f"Content-Type: {ctype}", "--data-binary", "@-"]
+        headers["Content-Type"] = ctype
         data = body if isinstance(body, str) else json.dumps(body)
-    r = subprocess.run(cmd, input=data, capture_output=True, text=True)
-    out, _, code = r.stdout.rpartition("\n__HTTP__")
     try:
-        parsed = json.loads(out) if out.strip() else None
+        r = _session().request(method, f"https://{HOSTS[env]}{path}", data=data, headers=headers,
+                               auth=(USER, _password()), timeout=timeout)
+    except requests.RequestException as e:
+        return 0, str(e)
+    try:
+        parsed = r.json() if r.text.strip() else None
     except ValueError:
-        parsed = out
-    return int(code or 0), parsed
+        parsed = r.text
+    return r.status_code, parsed

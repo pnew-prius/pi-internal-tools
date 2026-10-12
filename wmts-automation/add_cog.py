@@ -1,9 +1,8 @@
 """Add ONE COG to a WMTS service (a GWC-tiled GeoServer layer group).
 
 Stateless: everything is read from GeoServer, so it can run now, later, or resume after a failure.
-Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> bbox seed.
+Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> bbox seed -> stray sweep.
 """
-import re
 import time
 import urllib.parse
 
@@ -16,6 +15,7 @@ TEMPLATE_STORE = ("COPE-S26", "codes26-01")
 SEED_ZOOM = (0, 15)       # pre-seed range
 TRUNCATE_ZOOM = (0, 24)   # truncate must cover EVERY zoom: live-rendered z16+ tiles go stale at seams too
 EXPIRE_CLIENTS = 0        # seconds; 0 sends no-cache to browsers (consider raising, e.g. 86400)
+STEPS = ["workspace", "publish", "group_update", "tile_config", "truncate", "seed", "reconcile"]
 
 
 def group_state(env, ws, group):
@@ -26,6 +26,11 @@ def group_state(env, ws, group):
     pubs = r["layerGroup"]["publishables"]["published"]
     pubs = pubs if isinstance(pubs, list) else [pubs]
     return r["layerGroup"], [p["name"].split(":", 1)[-1] for p in pubs]
+
+
+def workspace_exists(env, ws):
+    c, r = call(env, "GET", f"/rest/workspaces/{ws}.json")
+    return c == 200
 
 
 def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
@@ -47,14 +52,35 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3):
     return deleted
 
 
-def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE):
-    """blob_path: path inside the sourceimagery container, e.g. 'Customer/project/tile-RGB.tif'. Returns a metrics dict."""
+def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False):
+    """blob_path: path inside the sourceimagery container, e.g. 'Customer/project/tile-RGB.tif'.
+    progress(step, status, seconds=None, detail=None) is called as each step starts ('running') and ends ('done').
+    Returns a metrics dict."""
     L = f"{ws}:{group}"
     m = {"tile": tile, "steps": {}}
     T = time.time()
+    clock = {}
 
-    def step(name, t0):
-        m["steps"][name] = round(time.time() - t0, 2)
+    def start(name):
+        clock[name] = time.time()
+        if progress:
+            progress(name, "running")
+
+    def done(name, detail=None):
+        m["steps"][name] = round(time.time() - clock[name], 2)
+        if progress:
+            progress(name, "done", m["steps"][name], detail)
+
+    # 0. workspace
+    start("workspace")
+    if not workspace_exists(env, ws):
+        if not create_workspace:
+            raise RuntimeError(f"workspace '{ws}' does not exist (tick 'create workspace' to create it)")
+        c, r = call(env, "POST", "/rest/workspaces", {"workspace": {"name": ws}})
+        if c != 201:
+            raise RuntimeError(f"could not create workspace {ws}: {c} {str(r)[:200]}")
+        m["workspace_created"] = True
+    done("workspace", "created" if m.get("workspace_created") else "exists")
 
     state = group_state(env, ws, group)
     if state and tile in state[1]:
@@ -62,7 +88,7 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE):
         return m
 
     # 1. publish (store, coverage, layer), hidden from WMS listings
-    t = time.time()
+    start("publish")
     src = call(env, "GET", f"/rest/workspaces/{template[0]}/coveragestores/{template[1]}.json")[1]["coverageStore"]
     stem = blob_path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     if call(env, "GET", f"/rest/workspaces/{ws}/coveragestores/{tile}.json")[0] != 200:
@@ -74,14 +100,16 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE):
             "name": tile, "nativeName": stem, "nativeCoverageName": stem, "title": tile,
             "projectionPolicy": "FORCE_DECLARED", "advertised": False}})
         if sc != 201 or cc != 201:
-            raise RuntimeError(f"publish failed store={sc} coverage={cc} {str(cr)[:200]}")
+            if sc == 201:  # we created the store, but the file is unreadable: leave nothing half-built
+                call(env, "DELETE", f"/rest/workspaces/{ws}/coveragestores/{tile}?recurse=true")
+            raise RuntimeError(f"publish failed (store {sc}, coverage {cc}): {str(cr)[:200]} - is the blob path readable?")
     cov = call(env, "GET", f"/rest/workspaces/{ws}/coveragestores/{tile}/coverages/{tile}.json")[1]["coverage"]
     fp = bbox_to_3857(cov["nativeBoundingBox"], int(cov["srs"].split(":")[1]))
     m["footprint_3857"], m["srs"] = fp, cov["srs"]
-    step("publish", t)
+    done("publish", cov["srs"])
 
     # 2. add to the group; GeoServer does NOT recompute bounds, so set them = union(existing, footprint) in EPSG:3857
-    t = time.time()
+    start("group_update")
     if state is None:
         bounds = fp
         body = {"layerGroup": {"name": group, "title": group, "mode": "SINGLE", "workspace": {"name": ws},
@@ -104,29 +132,30 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE):
     if not ok:
         raise RuntimeError(f"group {m['group_action']} failed {c} {str(r)[:200]}")
     m["members_after"] = (len(state[1]) if state else 0) + 1
-    step("group_update", t)
+    m["group_bounds_3857"] = bounds
+    done("group_update", m["group_action"])
 
     # 3. tile layer: EPSG:3857 only, PNG only, extent = group bounds (not auto-updated when members are added)
-    t = time.time()
+    start("tile_config")
     c, r = set_tile_layer_xml(env, L, bounds, formats=("image/png",), gridset="EPSG:3857", expire_clients=EXPIRE_CLIENTS)
     if c != 200:
         raise RuntimeError(f"tile layer config failed {c} {str(r)[:200]}")
-    step("tile_config", t)
+    done("tile_config")
 
     # 4. truncate the new footprint (all zooms), 5. seed what is missing there (z0-15)
-    t = time.time()
+    start("truncate")
     seed_request(env, L, "truncate", fp, TRUNCATE_ZOOM[0], TRUNCATE_ZOOM[1], threads=1)
     wait_seed_idle(env, L)
-    step("truncate", t)
-    t = time.time()
+    done("truncate")
+    start("seed")
     seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=4)
     m["tiles_job_total"] = wait_seed_idle(env, L)
-    step("seed", t)
+    done("seed", f"{m['tiles_job_total']} tiles")
 
     # 6. only the group may be tiled/advertised
-    t = time.time()
+    start("reconcile")
     m["stray_tile_layers_removed"] = reconcile_stray_tile_layers(env, ws, group)
-    step("reconcile", t)
+    done("reconcile", f"{len(m['stray_tile_layers_removed'])} removed")
 
     m["total_sec"] = round(time.time() - T, 2)
     return m

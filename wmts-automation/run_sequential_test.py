@@ -3,7 +3,7 @@
   python run_sequential_test.py --workspace WMTSTEST --group WW26-All --blobs blobs.json --out results/<run>
 blobs.json = JSON list of blob paths inside the sourceimagery container (az storage blob list ... --query "[].name").
 Seam checks compare the cached tile where a new COG meets earlier ones with an uncached live render.
-Needs GEOSERVER_PASS. Dev only unless --allow-prod.
+Dev only. Needs `az login` (Key Vault credential) or GEOSERVER_PASS.
 """
 import argparse
 import json
@@ -11,7 +11,6 @@ import os
 import re
 import time
 
-import gs_client
 from add_cog import add_cog
 from probe import get_tile, tile_bbox, tile_of, wms_nonblank
 
@@ -20,16 +19,9 @@ ap.add_argument("--workspace", required=True)
 ap.add_argument("--group", required=True)
 ap.add_argument("--blobs", required=True)
 ap.add_argument("--out", required=True)
-ap.add_argument("--env", default="dev")
-ap.add_argument("--allow-prod", action="store_true")
 ap.add_argument("--margin", type=float, default=100.0, help="metres: COGs this close count as adjoining")
 a = ap.parse_args()
-if a.env == "prod" and not a.allow_prod:
-    raise SystemExit("refusing prod without --allow-prod")
-_call = gs_client.call
-gs_client.call = lambda env, *args, **kw: _call(env, *args, allow_prod=a.allow_prod, **kw)
-
-WS, G, ENV = a.workspace, a.group, a.env
+WS, G, ENV = a.workspace, a.group, "dev"
 L = f"{WS}:{G}"
 os.makedirs(a.out, exist_ok=True)
 OUT = os.path.join(a.out, "metrics_seq.json")

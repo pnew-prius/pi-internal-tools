@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WMTS Service Builder</title>
+<style>
+  :root { --navy:#1F3D32; --teal:#1E6F5C; --amber:#E3B23C; --rust:#C1502E; --mint:#F2F6F4; --sage:#9AA5A1; --ink:#0B0B0B; --line:#d9e1dd; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; color:var(--ink); background:#fff; }
+  header { background:var(--navy); color:#fff; padding:14px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; border-bottom:4px solid var(--amber); }
+  header h1 { margin:0; font-size:18px; font-weight:600; letter-spacing:.2px; }
+  header .brand { font-size:11px; letter-spacing:2px; color:#bfe3d6; }
+  header .who { margin-left:auto; font-size:13px; color:#d6ebe3; }
+  main { max-width:980px; margin:0 auto; padding:24px; display:grid; gap:24px; }
+  section { border:1px solid var(--line); border-radius:8px; padding:20px; background:#fff; }
+  h2 { margin:0 0 14px; font-size:15px; color:var(--teal); text-transform:uppercase; letter-spacing:1px; }
+  label { display:block; font-size:13px; font-weight:600; margin:0 0 4px; }
+  .hint { font-size:12px; color:#595959; margin:4px 0 0; }
+  input[type=text], select { width:100%; padding:9px 10px; font:inherit; border:1px solid #b7c4be; border-radius:6px; background:#fff; }
+  input:focus, select:focus, button:focus-visible { outline:3px solid #8cc9b6; outline-offset:1px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
+  .full { grid-column:1/-1; }
+  .row { display:flex; align-items:center; gap:10px; margin-top:6px; }
+  button { font:inherit; font-weight:600; padding:10px 20px; border-radius:6px; border:0; background:var(--teal); color:#fff; cursor:pointer; }
+  button:disabled { background:var(--sage); cursor:not-allowed; }
+  .error { background:#fbeae5; border:1px solid var(--rust); color:#7a2a12; padding:10px 12px; border-radius:6px; margin-top:12px; display:none; }
+  .ok { background:var(--mint); border:1px solid var(--teal); padding:12px; border-radius:6px; margin-top:12px; display:none; }
+  ol.steps { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  ol.steps li { display:grid; grid-template-columns:28px 1fr auto; gap:10px; align-items:center; padding:8px 10px; border:1px solid var(--line); border-radius:6px; }
+  .dot { width:22px; height:22px; border-radius:50%; border:2px solid var(--sage); display:inline-block; }
+  li.running .dot { border-color:var(--amber); border-top-color:transparent; animation:spin 1s linear infinite; }
+  li.done .dot { background:var(--teal); border-color:var(--teal); }
+  li.failed .dot { background:var(--rust); border-color:var(--rust); }
+  li.skipped .dot { border-style:dashed; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { li.running .dot { animation:none; } }
+  .secs { font-size:12px; color:#595959; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:#595959; font-weight:600; }
+  .pill { font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:var(--mint); color:var(--teal); }
+  .pill.failed { background:#fbeae5; color:var(--rust); }
+  code { background:var(--mint); padding:1px 5px; border-radius:4px; font-size:12px; word-break:break-all; }
+  a { color:var(--teal); }
+</style>
+</head>
+<body>
+<header>
+  <div><div class="brand">PRIUS INTELLI</div><h1>WMTS Service Builder</h1></div>
+  <div class="who">Signed in as <strong id="user">{{ user }}</strong></div>
+</header>
+<main>
+  <section aria-labelledby="addh">
+    <h2 id="addh">Add a COG to a service</h2>
+    <form id="form" class="grid" autocomplete="off">
+      <div>
+        <label for="env">Environment</label>
+        <select id="env">{% for e in envs %}<option value="{{ e }}">{{ e }}</option>{% endfor %}</select>
+      </div>
+      <div>
+        <label for="workspace">Workspace</label>
+        <input type="text" id="workspace" list="wslist" required placeholder="e.g. WW26">
+        <datalist id="wslist"></datalist>
+        <p class="hint">One per customer project/season.</p>
+      </div>
+      <div>
+        <label for="group">Service (layer group)</label>
+        <input type="text" id="group" list="grlist" required placeholder="e.g. WW26-All">
+        <datalist id="grlist"></datalist>
+        <p class="hint" id="svcinfo">Pick an existing service or type a new name.</p>
+      </div>
+      <div class="full">
+        <label for="blob">COG blob path</label>
+        <input type="text" id="blob" required placeholder="Customer/project-season/tile-RGB.tif  (or paste the full blob URL)">
+        <p class="hint">Path inside <code>pigeoserverprod/sourceimagery</code>. The layer is named from the file name without <code>-RGB</code>.</p>
+      </div>
+      <div class="full">
+        <div class="row"><input type="checkbox" id="mkws"><label for="mkws" style="margin:0;font-weight:400">Create the workspace if it doesn't exist</label></div>
+        <div class="row"><button id="go" type="submit">Add COG</button><span class="hint" id="note"></span></div>
+        <div class="error" id="err" role="alert"></div>
+      </div>
+    </form>
+  </section>
+
+  <section id="progress" aria-live="polite" style="display:none">
+    <h2>Progress <span id="jobtitle" style="text-transform:none;letter-spacing:0;font-weight:400;color:#595959"></span></h2>
+    <ol class="steps" id="steps"></ol>
+    <div class="ok" id="result"></div>
+  </section>
+
+  <section aria-labelledby="hist">
+    <h2 id="hist">Recent adds</h2>
+    <table><thead><tr><th>When</th><th>Who</th><th>Service</th><th>COG</th><th>Status</th><th>Time</th></tr></thead><tbody id="history"></tbody></table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const LABELS = {workspace:"Workspace", publish:"Publish COG as a hidden layer", group_update:"Add to service group and update bounds",
+  tile_config:"Set tile cache (EPSG:3857, PNG)", truncate:"Truncate old tiles in the COG's area", seed:"Seed new tiles (zoom 0-15)", reconcile:"Clean up stray tile layers"};
+let timer = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let body = {}; try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(body.error || ("Request failed (" + r.status + ")"));
+  return body;
+}
+function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+function fillList(id, items) { const dl = $(id); dl.replaceChildren(...items.map(v => { const o = document.createElement("option"); o.value = v; return o; })); }
+
+async function loadWorkspaces() { try { fillList("wslist", (await api("/api/workspaces?env=" + $("env").value)).workspaces); } catch (e) {} }
+async function loadGroups() {
+  const ws = $("workspace").value.trim(); if (!ws) return;
+  try { fillList("grlist", (await api("/api/groups?env=" + $("env").value + "&workspace=" + encodeURIComponent(ws))).groups); } catch (e) { fillList("grlist", []); }
+}
+async function showService() {
+  const ws = $("workspace").value.trim(), g = $("group").value.trim(); if (!ws || !g) return;
+  try {
+    const s = await api("/api/service?env=" + $("env").value + "&workspace=" + encodeURIComponent(ws) + "&group=" + encodeURIComponent(g));
+    $("svcinfo").textContent = s.exists ? ("Existing service with " + s.members + " COGs.") : "New service - it will be created with this COG.";
+  } catch (e) { $("svcinfo").textContent = ""; }
+}
+
+function renderSteps(job) {
+  $("steps").replaceChildren(...job.steps.map(s => {
+    const li = el("li", undefined, s.status);
+    li.append(el("span", undefined, "dot"), el("span", LABELS[s.name] + (s.detail ? " - " + s.detail : "")),
+              el("span", s.seconds != null ? s.seconds.toFixed(1) + " s" : (s.status === "skipped" ? "skipped" : ""), "secs"));
+    return li;
+  }));
+}
+function renderResult(job) {
+  const box = $("result"); box.replaceChildren();
+  if (job.status === "done") {
+    const r = job.result || {};
+    box.style.display = "block";
+    if (r.skipped) { box.append(el("div", "Nothing to do: this COG is already in the service.")); return; }
+    box.append(el("strong", "Done in " + (r.total_sec || 0).toFixed(1) + " s. "), el("span", (r.group_action || "") + ", " + (r.members_after || "?") + " COGs in the service, " + (r.tiles_job_total || 0) + " tiles processed."));
+    const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group));
+    box.append(p);
+    api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
+      const a = el("a", s.capabilities_url); a.href = s.capabilities_url; a.target = "_blank"; a.rel = "noopener";
+      const q = el("p"); q.append("WMTS capabilities URL: ", a); box.append(q);
+    }).catch(() => {});
+  } else if (job.status === "failed") {
+    $("err").textContent = "Failed: " + job.error + " Nothing is lost: fix the cause and run the same add again."; $("err").style.display = "block";
+    box.style.display = "none";
+  }
+}
+async function poll(id) {
+  try {
+    const { job } = await api("/api/jobs/" + id);
+    renderSteps(job);
+    if (job.status === "done" || job.status === "failed") { clearInterval(timer); $("go").disabled = false; renderResult(job); loadHistory(); }
+  } catch (e) { clearInterval(timer); $("go").disabled = false; $("err").textContent = e.message; $("err").style.display = "block"; }
+}
+async function loadHistory() {
+  try {
+    const { jobs } = await api("/api/jobs");
+    $("history").replaceChildren(...jobs.map(j => {
+      const tr = el("tr"); const d = new Date((j.created || 0) * 1000);
+      const dur = j.finished && j.started ? (j.finished - j.started).toFixed(0) + " s" : "";
+      const st = el("td"); st.append(el("span", j.status, "pill" + (j.status === "failed" ? " failed" : "")));
+      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group), el("td", j.tile), st, el("td", dur));
+      return tr;
+    }));
+  } catch (e) {}
+}
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault(); $("err").style.display = "none"; $("result").style.display = "none"; $("go").disabled = true;
+  try {
+    const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
+                             blob_path: $("blob").value, create_workspace: $("mkws").checked }) });
+    $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.tile + " into " + job.workspace + ":" + job.group;
+    renderSteps(job); timer = setInterval(() => poll(job.id), 1000);
+  } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; $("go").disabled = false; }
+});
+$("env").addEventListener("change", loadWorkspaces);
+$("workspace").addEventListener("change", () => { loadGroups(); showService(); });
+$("group").addEventListener("change", showService);
+loadWorkspaces(); loadHistory();
+</script>
+</body>
+</html>

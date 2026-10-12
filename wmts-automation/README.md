@@ -15,10 +15,25 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 3. Widen the tile layer extent. 4. **Truncate** the COG's bounding box (zoom 0-24). 5. **Seed** the same box (zoom 0-15, PNG).
 6. Remove stray per-layer tile layers. The function is stateless (reads GeoServer), idempotent (skips existing members), resumable.
 
+## Run the GUI locally (dev GeoServer)
+```
+python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
+python -m pytest -q        # 44 unit tests against a fake GeoServer; no network, no side effects
+```
+`run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
+and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
+The page: choose environment, workspace, service (layer group), paste the COG blob path (or full blob URL), Add. Progress shows
+each step; history lists who added what. One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
+are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (default `dev`). A failed add removes anything it created.
+
 ## Files
 | File | Purpose |
 |---|---|
-| `gs_client.py` | curl-based REST client. Credentials from `GEOSERVER_PASS`; prod needs `allow_prod=True` |
+| `app.py`, `templates/index.html` | Flask UI + JSON API (`/api/jobs`, `/api/workspaces`, `/api/groups`, `/api/service`, `/healthz`) |
+| `jobs.py`, `store.py` | one-job-per-service background runner; JSON-lines history (replace with Azure Table/Blob before deploy) |
+| `validate.py`, `safety.py` | input rules (path/URL normalizing, no SAS/`..`), prod-name guard |
+| `tests/` | pytest suite with `fake_gs.py` (in-memory GeoServer/GWC) |
+| `gs_client.py` | requests-based REST client (custom User-Agent: the App Gateway 403s Python's default). Password: `GEOSERVER_PASS` env var, else Key Vault via `DefaultAzureCredential` (az login locally, managed identity in Azure); prod needs `allow_prod=True` |
 | `gwc.py` | tile layer XML config, bounded truncate/seed, UTM -> EPSG:3857 footprints |
 | `add_cog.py` | the per-COG add workflow + stray tile layer reconcile |
 | `probe.py` | tile fetch and uncached WMS ground-truth comparison |
@@ -26,7 +41,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 | `final_metrics.py` | step timings, tiles per zoom from blob storage, VM CPU |
 | `results/2026-10-13-sequential-ww26/` | raw metrics + `REPORT.md` from the 54-COG test |
 
-Needs: Python 3 with `pyproj` (and `pillow` for image checks), `curl.exe`, Azure CLI logged in. Set `GEOSERVER_PASS` first.
+Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe` required (Linux-ready).
 
 ## Rules learned (each is enforced in the code)
 1. **Dev and prod share ONE GWC tile cache** (`pigeoserverprod/tilecache`). Never test with a workspace/group name that exists on prod.
@@ -42,6 +57,10 @@ Needs: Python 3 with `pyproj` (and `pillow` for image checks), `curl.exe`, Azure
 ## Open items
 - Seed time grows with group size (first 10 adds 9 s -> last 10 adds 22 s); re-measure at larger sizes.
 - Tile responses are `no-cache` (set `EXPIRE_CLIENTS` in `add_cog.py`); no CORS headers (matters for browser clients such as ArcGIS Online).
+- GUI not yet deployed. To do before deploying: durable history store (App Service disk is not durable), App Service Authentication restricted to an Entra group
+  (header `X-MS-CLIENT-PRINCIPAL-NAME`), managed identity with Key Vault secret-read on `pi-geoserver`, gunicorn start command, a dev-named app on `asp-dev1`.
+- v1 takes a pasted blob path (browsing `sourceimagery` needs a delegated VNet subnet the storage firewall trusts; none exists yet).
+- The post-add stray-layer sweep adds 3-6 s per add; could be cut by sweeping once per batch.
 - Not yet tested: replacing/removing a COG, adds spread over days, prod, ArcGIS Pro client.
 - The `geoadmin` password still sits in plaintext in `geoserver_seed_cost.py` / `gsd_cost_table.py` (outside this folder): rotate and move to Key Vault.
-- Dev test workspaces `AUTOTEST` and `WMTSTEST` still exist on dev; delete after review.
+- Dev test workspaces `AUTOTEST`, `WMTSTEST` and `GUITEST` still exist on dev; delete after review.
