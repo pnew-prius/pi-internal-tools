@@ -8,6 +8,7 @@ import uuid
 
 import add_cog as add_cog_mod
 import gs_client
+import instance_sync
 import remove_service as remove_mod
 from add_cog import STEPS
 
@@ -21,13 +22,49 @@ def _blank_steps():
 
 
 class JobManager:
-    def __init__(self, store):
+    SYNC_MODES = ("reload", "restart", "none")
+
+    def __init__(self, store, sync_fn=None):
         self.store = store
+        self._sync_fn = sync_fn or self._default_sync
         self.jobs = {}
         self._active = set()
         self._lock = threading.Lock()
 
-    def submit(self, user, env, workspace, group, items, create_workspace=False, refresh=False, service="wmts", run=True):
+    @staticmethod
+    def _default_sync(mode, progress=None):
+        return instance_sync.sync(mode, gs_client._password(), progress=progress)
+
+    @staticmethod
+    def _sync_init(env, mode):
+        if env != "prod":
+            return {"mode": None, "status": "skipped", "detail": "not needed on dev (one server serves both admin and customers)"}
+        return {"mode": mode, "status": "pending", "detail": None}
+
+    def _sync_job(self, job, changed):
+        """Once per job, after all seeding: make the customer-facing prod GeoServer instances see the change. Never fails the COGs."""
+        s = job["sync"]
+        if job["env"] != "prod":
+            return
+        if s["mode"] == "none":
+            s.update(status="skipped", detail="skipped by choice: customers will NOT see this change until the scale set is reloaded or restarted")
+        elif not changed:
+            s.update(status="skipped", detail="nothing changed, so nothing to update")
+        else:
+            s["status"] = "running"
+            t0 = time.time()
+            try:
+                r = self._sync_fn(s["mode"], progress=lambda msg: s.update(detail=msg))
+                s.update(status="done", detail=r["detail"], instances=r.get("instances"), seconds=round(time.time() - t0, 1))
+            except Exception as e:
+                s.update(status="failed", seconds=round(time.time() - t0, 1),
+                         detail=f"{str(e)[:300]} - customers may NOT see this change until the scale set is reloaded or restarted")
+        if s["status"] != "skipped" or s["mode"] == "none":
+            self._safe_record(job, {"index": job["counts"]["total"], "tile": "(update customer-facing GeoServer)", "blob_path": "",
+                                    "status": s["status"], "error": s["detail"] if s["status"] in ("failed", "skipped") else None,
+                                    "seconds": s.get("seconds"), "started": job.get("started"), "finished": time.time()})
+
+    def submit(self, user, env, workspace, group, items, create_workspace=False, refresh=False, service="wmts", run=True, sync_mode="reload"):
         """items: [{'tile':..., 'path':...}, ...] in the order to add them."""
         key = (env, workspace, group)
         with self._lock:
@@ -38,13 +75,13 @@ class JobManager:
                    "status": "queued", "created": time.time(), "refresh": refresh, "service": service, "current": None,
                    "items": [{"index": i, "tile": it["tile"], "blob_path": it["path"], "status": "pending", "steps": _blank_steps(),
                               "result": None, "error": None, "seconds": None} for i, it in enumerate(items)],
-                   "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}}
+                   "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}, "sync": self._sync_init(env, sync_mode)}
             self.jobs[job["id"]] = job
         if run:
             threading.Thread(target=self._run, args=(job, create_workspace), daemon=True).start()
         return job
 
-    def submit_remove(self, user, env, workspace, group, run=True):
+    def submit_remove(self, user, env, workspace, group, run=True, sync_mode="reload"):
         """Remove a whole service (tile cache first). One job per service, same lock as adds."""
         key = (env, workspace, group)
         with self._lock:
@@ -56,7 +93,7 @@ class JobManager:
                    "status": "queued", "created": time.time(), "refresh": False, "service": None, "current": None,
                    "items": [{"index": 0, "tile": "(remove service)", "blob_path": "", "status": "pending", "steps": steps,
                               "result": None, "error": None, "seconds": None}],
-                   "counts": {"total": 1, "done": 0, "skipped": 0, "failed": 0}}
+                   "counts": {"total": 1, "done": 0, "skipped": 0, "failed": 0}, "sync": self._sync_init(env, sync_mode)}
             self.jobs[job["id"]] = job
         if run:
             threading.Thread(target=self._run_remove_session, args=(job,), daemon=True).start()
@@ -75,6 +112,9 @@ class JobManager:
             out = remove_mod.remove_service(job["env"], job["workspace"], job["group"], progress=self._progress(item), delete_empty_workspace=True)
             item["result"], item["status"], final = out, "done", "done"
             job["counts"]["done"] += 1
+            item["finished"] = time.time()
+            item["seconds"] = round(item["finished"] - item["started"], 1)
+            self._sync_job(job, changed=True)       # customers must stop seeing the removed service too
         except Exception as e:
             item["status"], item["error"] = "failed", str(e)[:500]
             job["counts"]["failed"] += 1
@@ -156,6 +196,7 @@ class JobManager:
                 item["seconds"] = round(item["finished"] - item["started"], 1)
                 self._safe_record(job, item)
                 create_workspace = False  # the first COG created it (or it already existed)
+            self._sync_job(job, changed=job["counts"]["done"] > 0)   # ONCE, after the last COG is seeded
         except BaseException as e:  # anything unexpected: stop, but never report COGs that did not run as done
             stopped = f"{type(e).__name__}: {e}"[:300]
             job["error"] = f"The job stopped unexpectedly: {stopped}"

@@ -235,3 +235,17 @@ def test_prod_through_the_app_is_read_only_here_and_refuses_unconfirmed_writes(t
     assert c.post("/api/jobs", json=dict(body, confirm_prod=True), headers=other).status_code == 403
     assert c.post("/api/remove", json={"env": "prod", "workspace": "COPE-S26", "group": "x", "confirm": "x"}, headers=ok).status_code == 400
     assert not mgr.jobs                                                                          # nothing was ever started
+
+
+@pytest.mark.slow
+def test_instance_sync_reload_through_azure_run_command_on_the_dev_vm():
+    """Real Azure Run Command on the DEV VM only (never a prod scale set): reload works, the password stays out of the script,
+    and the temporary run command is gone afterwards. Takes ~1.5 minutes (Azure schedules the command)."""
+    import gs_client
+    import instance_sync as isync
+    target = "vm:RG_GEOSERVER_DEV_SOUTHCENTRALUS/pi-geosvrd01"
+    r = isync.sync("reload", gs_client._password(), target)
+    assert r["instances"] == 1 and "no restart" in r["detail"] and "still deleting" not in r["detail"]
+    _, res = isync._base(isync.parse_target(target))
+    c, left = isync._arm("GET", f"{res}/runCommands?api-version={isync.API}")
+    assert c == 200 and not [x for x in left.get("value", []) if x["name"].startswith("wmts-reload-")]

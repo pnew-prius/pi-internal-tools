@@ -18,7 +18,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 102 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 117 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -38,6 +38,20 @@ Rules on prod: every add needs the "I understand this changes PRODUCTION" box (`
 seeding uses 2 threads (dev 4) so live traffic is not starved. Prod access in code is a thread-local session (`gs_client.prod_access(write=...)`):
 without it every prod call raises. Red banner + dark header make the environment unmistakable. Prod writes have NOT been exercised against the
 real prod server yet (unit tests use a separate fake prod; live tests are read-only on prod).
+
+## Prod: updating the customer-facing GeoServer (`instance_sync.py`)
+On prod the app writes through the ADMIN node (`imageadmin` -> VM `pi-geoserver01`), but customers are served by the scale set `geoserver-vmss`
+(`imageservices`). They are separate GeoServer processes sharing a data directory, so the scale-set instances keep their old in-memory configuration
+until reloaded or restarted: clients (QGIS/ArcGIS) "don't see the change". Dev is ONE VM serving both, so dev never needs this (verified).
+Once per prod job (after the last COG is seeded; also after a prod removal), under the service lock, in the mode chosen on the page:
+- **reload** (default): per instance, in parallel, zero downtime. Azure managed Run Command runs GeoServer's REST reload (+ GWC reload) ON the instance.
+  The GeoServer password is a PROTECTED parameter (never in the script); the run command is deleted afterwards and the deletion is confirmed.
+- **restart**: rolling, one instance at a time, waiting for each to report exactly `HealthState/healthy`; stops if one never does.
+- **none**: skip (the page then warns that customers will not see the change until someone does it).
+A sync failure never fails the COGs; it is shown loudly ("customers may NOT see this change yet") and recorded in history.
+Config: `WMTS_PROD_SYNC_TARGET=vmss:RG_GEOSERVER_SOUTHCENTRALUS/geoserver-vmss` (unset = sync reports "not configured"), `WMTS_SUBSCRIPTION`.
+Needs the app's identity to hold **Virtual Machine Contributor on `geoserver-vmss`** (Azure change, not done). Verified for real on the DEV VM only
+(`live_tests -m slow`): ~1.5 min per reload (Azure schedules the command). NEVER run against prod without explicit approval.
 
 ## Live test suite (real DEV GeoServer; opt-in)
 ```
@@ -60,6 +74,7 @@ path through the app is read-only and refuses unconfirmed writes (the suite NEVE
 | `live_tests/` | opt-in live suite (above) |
 | `wsgi.py`, `gunicorn.conf.py`, `startup.sh` | production entry point; ONE worker on purpose (jobs/locks are in memory) |
 | `../.github/workflows/wmts-automation-tests.yml` | runs the unit suite on Linux when pushed (this machine has no WSL/Docker) |
+| `instance_sync.py` | prod: reload/restart the customer-facing scale set after a run (Azure Run Command / ARM REST) |
 | `validate.py`, `safety.py` | input rules (path/URL normalizing, no SAS/`..`), prod-name guard |
 | `tests/` | pytest suite with `fake_gs.py` (in-memory GeoServer/GWC) |
 | `gs_client.py` | requests-based REST client (custom User-Agent: the App Gateway 403s Python's default). Password: `GEOSERVER_PASS` env var, else Key Vault via `DefaultAzureCredential` (az login locally, managed identity in Azure); prod needs `allow_prod=True` |

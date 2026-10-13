@@ -179,6 +179,9 @@ def create_app(manager=None):
         env = env_or_400()
         ws = check_name("Workspace", body.get("workspace"))
         group = check_name("Service", body.get("group"))
+        sync_mode = (body.get("sync_mode") or "reload").lower()
+        if sync_mode not in JobManager.SYNC_MODES:
+            raise ValidationError(f"sync_mode must be one of: {', '.join(JobManager.SYNC_MODES)}.")
         service = (body.get("service_type") or "wmts").lower()
         if service not in SERVICE_TYPES:
             raise ValidationError(f"Service type must be one of: {', '.join(SERVICE_TYPES)}.")
@@ -202,7 +205,7 @@ def create_app(manager=None):
             return jsonify(error=str(e)), 503
         try:
             job = mgr.submit(current_user(), env, ws, group, [{"tile": i["tile"], "path": i["path"]} for i in items],
-                             create_workspace=bool(body.get("create_workspace")), refresh=bool(body.get("refresh")), service=service)
+                             create_workspace=bool(body.get("create_workspace")), refresh=bool(body.get("refresh")), service=service, sync_mode=sync_mode)
         except Busy as e:
             return jsonify(error=str(e)), 409
         return jsonify(job=job), 202
@@ -229,7 +232,10 @@ def create_app(manager=None):
         if group_marker(st[0]) is None:
             return jsonify(error="This service was not created by this app, so it cannot be removed here."), 403
         try:
-            job = mgr.submit_remove(current_user(), env, ws, group)
+            sync_mode = (body.get("sync_mode") or "reload").lower()
+            if sync_mode not in JobManager.SYNC_MODES:
+                raise ValidationError(f"sync_mode must be one of: {', '.join(JobManager.SYNC_MODES)}.")
+            job = mgr.submit_remove(current_user(), env, ws, group, sync_mode=sync_mode)
         except Busy as e:
             return jsonify(error=str(e)), 409
         return jsonify(job=job), 202

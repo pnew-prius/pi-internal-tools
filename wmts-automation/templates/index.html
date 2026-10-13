@@ -101,6 +101,8 @@
         <div class="row"><input type="checkbox" id="mkws"><label for="mkws" style="margin:0;font-weight:400">Create the workspace if it doesn't exist</label></div>
         <div class="row"><input type="checkbox" id="refresh"><label for="refresh" style="margin:0;font-weight:400">Refresh COGs already in the service (re-seed them; otherwise they are skipped)</label></div>
         <div class="row" id="prodrow" style="display:none"><input type="checkbox" id="prodok"><label for="prodok" style="margin:0;font-weight:700;color:#C1502E">I understand this changes PRODUCTION</label></div>
+        <div class="row" id="syncsel" style="display:none"><label for="syncmode" style="margin:0;font-weight:600">After the run, update customer-facing GeoServer:</label>
+          <select id="syncmode" style="width:auto"><option value="reload">Reload in place (no downtime)</option><option value="restart">Rolling restart (brief outage if one instance)</option><option value="none">Skip - I will do it myself</option></select></div>
         <div class="row"><button id="go" type="submit" disabled>Add COGs</button><span class="hint" id="note"></span></div>
         <div class="error" id="err" role="alert"></div>
       </div>
@@ -126,6 +128,7 @@
     <ul class="items" id="items"></ul>
     <div class="hint" id="stephdr"></div>
     <ol class="steps" id="steps"></ol>
+    <div id="syncrow" style="margin:8px 0;font-size:13px"></div>
     <div class="ok" id="result"></div>
   </section>
 
@@ -183,6 +186,13 @@ function urlRow(label, url, note) {
   if (note) wrap.append(el("div", note, "hint"));
   return wrap;
 }
+function renderSync(job) {
+  const el2 = $("syncrow"); el2.replaceChildren();
+  if (job.env !== "prod" || !job.sync) return;
+  const s = job.sync, label = {pending: "waiting", running: "in progress", done: "done", failed: "FAILED", skipped: "skipped"}[s.status] || s.status;
+  const line = el("div", "Customer-facing GeoServer: " + label + (s.detail ? " - " + s.detail : "") + (s.seconds != null && s.status === "done" ? " (" + s.seconds + " s)" : ""), s.status === "failed" ? "prob" : "hint");
+  el2.append(line);
+}
 function renderStepList(item, kind) {
   $("steps").replaceChildren(...item.steps.map(s => {
     const li = el("li", undefined, s.status);
@@ -193,6 +203,7 @@ function renderStepList(item, kind) {
 }
 function renderJob(job) {
   const c = job.counts, finished = c.done + c.skipped + c.failed;
+  renderSync(job);
   if (job.kind === "remove") {
     $("overall").textContent = (job.status === "running" || job.status === "queued") ? "Removing " + job.workspace + ":" + job.group + " ..." : (job.status === "done" ? "Removed." : "Removal failed.");
     $("barfill").style.width = (job.status === "done" || job.status === "failed") ? "100%" : "30%";
@@ -229,6 +240,8 @@ function renderResult(job) {
              el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
   const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
   if (job.error) box.append(el("p", job.error, "prob"));
+  if (job.sync && job.sync.status === "failed") box.append(el("p", "Customers may NOT see this change yet: " + job.sync.detail, "prob"));
+  if (job.sync && job.sync.status === "skipped" && job.sync.mode === "none") box.append(el("p", job.sync.detail, "prob"));
   if (job.history_error) box.append(el("p", "Note: the history could not be saved (" + job.history_error + "). The adds themselves were not affected.", "hint"));
   if (c.done || c.skipped) api("/api/service?env=" + job.env + "&workspace=" + encodeURIComponent(job.workspace) + "&group=" + encodeURIComponent(job.group)).then(s => {
     const urls = el("div"); urls.append(el("h2", "Service URLs"));
@@ -303,7 +316,7 @@ $("form").addEventListener("submit", async (ev) => {
   try {
     const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
-                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value, confirm_prod: isProd() && $("prodok").checked }) });
+                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value, confirm_prod: isProd() && $("prodok").checked, sync_mode: isProd() ? $("syncmode").value : "reload" }) });
     $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.counts.total + " COG(s) into " + job.workspace + ":" + job.group;
     renderJob(job); timer = setInterval(() => poll(job.id), 1000);
   } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }
@@ -316,7 +329,7 @@ $("rmform").addEventListener("submit", async (ev) => {
   running = true; syncRemove(); syncButton($("go").textContent);
   try {
     const { job } = await api("/api/remove", { method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ env: $("env").value, workspace: $("rmws").value.trim(), group: $("rmgroup").value.trim(), confirm: $("rmconfirm").value }) });
+      body: JSON.stringify({ env: $("env").value, workspace: $("rmws").value.trim(), group: $("rmgroup").value.trim(), confirm: $("rmconfirm").value, sync_mode: isProd() ? $("syncmode").value : "reload" }) });
     $("progress").style.display = "block"; $("jobtitle").textContent = "- removing " + job.workspace + ":" + job.group;
     renderJob(job); timer = setInterval(() => pollRemove(job.id), 1000);
   } catch (e) { $("rmerr").textContent = e.message; $("rmerr").style.display = "block"; running = false; syncRemove(); syncButton($("go").textContent); }
@@ -333,6 +346,7 @@ function applyEnv() {
   document.body.classList.toggle("prod", prod);
   $("prodbar").style.display = prod ? "block" : "none";
   $("prodrow").style.display = prod ? "flex" : "none";
+  $("syncsel").style.display = prod ? "flex" : "none";
   if (!prod) $("prodok").checked = false;
   $("rmconfirmlabel").textContent = prod ? "Type workspace:service to confirm (PRODUCTION)" : "Type the service name to confirm";
   syncButton($("go").textContent); syncRemove();
