@@ -6,10 +6,12 @@ import re
 
 
 class FakeGS:
-    def __init__(self, cogs, workspaces=("COPE-S26",), prod_workspaces=()):
+    def __init__(self, cogs, workspaces=("COPE-S26",), prod_workspaces=(), _is_prod=False):
         self.cogs = cogs                     # file stem -> (epsg code str, {minx,miny,maxx,maxy})
         self.workspaces = set(workspaces)
         self.prod_workspaces = set(prod_workspaces)
+        # PROD is a completely separate in-memory server, so tests can prove dev jobs never touch it and vice versa
+        self.prod = None if _is_prod else FakeGS(cogs, workspaces=set(prod_workspaces) | {"COPE-S26"}, _is_prod=True)
         self.stores, self.coverages, self.groups, self.gwc, self.seeds, self.log = {}, {}, {}, {}, [], []
         self.stores[("COPE-S26", "codes26-01")] = {"name": "codes26-01", "connectionParameters": {"entry": []}, "metadata": {"entry": {}}}
         self.auto_stray = True
@@ -18,9 +20,7 @@ class FakeGS:
         self.log.append((env, method, path))
         path = path.split("?")[0]
         if env == "prod":
-            if method == "GET" and path == "/rest/workspaces.json":
-                return 200, {"workspaces": {"workspace": [{"name": w} for w in sorted(self.prod_workspaces)]}}
-            return 404, "n/a"
+            return self.prod.call("dev", method, path, body, ctype, accept, timeout, allow_prod)
         m = re.fullmatch
         if path == "/rest/workspaces.json" and method == "GET":
             return 200, {"workspaces": {"workspace": [{"name": w} for w in sorted(self.workspaces)]} if self.workspaces else ""}
@@ -98,7 +98,7 @@ class FakeGS:
         g = m(r"/gwc/rest/seed/(.+)\.json", path)
         if g and method == "POST":
             self.seeds.append((body["seedRequest"]["type"], body["seedRequest"]["zoomStart"], body["seedRequest"]["zoomStop"],
-                               [float(v) for v in body["seedRequest"]["bounds"]["coords"]["double"]])); return 200, ""
+                               [float(v) for v in body["seedRequest"]["bounds"]["coords"]["double"]], body["seedRequest"].get("threadCount"))); return 200, ""
         if g and method == "GET":
             return 200, {"long-array-array": []}
         return 404, f"fake: unhandled {method} {path}"

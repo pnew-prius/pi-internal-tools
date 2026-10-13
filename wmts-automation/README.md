@@ -18,7 +18,7 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 90 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 102 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -29,16 +29,27 @@ in pasted order and a failed COG does NOT stop the rest (job ends done / partial
 COGs already in the service are skipped unless 'Refresh' is ticked (re-runs tile config, truncate and seed: repairs a failed add or picks up a replaced file). One add at a time per service (a second returns 409). Dev workspaces whose names exist on prod
 are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (default `dev`). A failed add removes anything it created.
 
+## PROD in the GUI (fail-closed)
+The Environment dropdown offers **prod** only when ALL of these hold: `WMTS_ENVS` includes `prod` AND the signed-in user is in `WMTS_PROD_USERS`
+(comma-separated emails) or in the Entra group `WMTS_PROD_GROUP_ID` (read from the App Service sign-in claims). If prod is requested but nobody is
+authorized, it is silently dropped. Locally: `python run_local.py --prod` offers prod to your own user only.
+Rules on prod: every add needs the "I understand this changes PRODUCTION" box (`confirm_prod`); removal needs `workspace:service` typed; at most
+`WMTS_PROD_MAX_BATCH` (25) COGs per run; the app only modifies services IT created (marker in group metadata; hand-built services are refused);
+seeding uses 2 threads (dev 4) so live traffic is not starved. Prod access in code is a thread-local session (`gs_client.prod_access(write=...)`):
+without it every prod call raises. Red banner + dark header make the environment unmistakable. Prod writes have NOT been exercised against the
+real prod server yet (unit tests use a separate fake prod; live tests are read-only on prod).
+
 ## Live test suite (real DEV GeoServer; opt-in)
 ```
 set WMTS_LIVE=1
-python -m pytest live_tests -m "live and not slow" -v      # ~4 min: 10 tests
+python -m pytest live_tests -m "live and not slow" -v      # ~4 min: 11 tests
 python -m pytest live_tests -m slow -v -s                  # 54-COG WMS batch through the app (scale)
 ```
 Each test builds in a brand-new throwaway workspace (name checked against prod) and tears it down with `remove_service` (truncates the tile cache, deletes the
 group and layers, deletes the workspace) and then asserts NO tiles are left in the shared cache. Covers: adjoining-COG seams vs an uncached render, WMS never grows a
 tile layer, batch carries on past a missing file, refresh repairs a failed add, two services built at once in one workspace, two app instances adding to the same
-service (concurrent writers), kill the process mid-add then refresh, remove-service leaves no orphan tiles, prod cannot be written.
+service (concurrent writers), kill the process mid-add then refresh, remove-service leaves no orphan tiles, prod cannot be written, and the prod
+path through the app is read-only and refuses unconfirmed writes (the suite NEVER writes to prod).
 
 ## Files
 | File | Purpose |

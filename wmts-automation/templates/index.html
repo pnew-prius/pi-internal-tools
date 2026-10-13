@@ -47,6 +47,9 @@
   .urlrow input { font-family:Consolas,monospace; font-size:12px; background:#fff; }
   .urlrow button { padding:6px 14px; }
   .urllabel { font-size:12px; font-weight:700; color:var(--teal); text-transform:uppercase; letter-spacing:.5px; margin-top:8px; }
+  #prodbar { background:#C1502E; color:#fff; text-align:center; font-weight:700; letter-spacing:.4px; padding:9px 16px; font-size:13px; }
+  body.prod header { border-bottom-color:#C1502E; background:#5b1f10; }
+  body.prod #go { background:#C1502E; }
   .secs { font-size:12px; color:#595959; font-variant-numeric:tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
@@ -62,6 +65,7 @@
   <div><div class="brand">PRIUS INTELLI</div><h1>Map Service Builder <span style="font-weight:400;font-size:13px;color:#bfe3d6">WMTS / WMS</span></h1></div>
   <div class="who">Signed in as <strong id="user">{{ user }}</strong></div>
 </header>
+<div id="prodbar" role="alert" style="display:none">PRODUCTION &mdash; changes here affect the live image server that customers use. Double-check the workspace, service and COG list.</div>
 <main>
   <section aria-labelledby="addh">
     <h2 id="addh">Create a service or add a COG</h2>
@@ -96,6 +100,7 @@
       <div class="full">
         <div class="row"><input type="checkbox" id="mkws"><label for="mkws" style="margin:0;font-weight:400">Create the workspace if it doesn't exist</label></div>
         <div class="row"><input type="checkbox" id="refresh"><label for="refresh" style="margin:0;font-weight:400">Refresh COGs already in the service (re-seed them; otherwise they are skipped)</label></div>
+        <div class="row" id="prodrow" style="display:none"><input type="checkbox" id="prodok"><label for="prodok" style="margin:0;font-weight:700;color:#C1502E">I understand this changes PRODUCTION</label></div>
         <div class="row"><button id="go" type="submit" disabled>Add COGs</button><span class="hint" id="note"></span></div>
         <div class="error" id="err" role="alert"></div>
       </div>
@@ -108,7 +113,7 @@
     <form id="rmform" class="grid" autocomplete="off">
       <div><label for="rmws">Workspace</label><input type="text" id="rmws" list="wslist" required></div>
       <div><label for="rmgroup">Service (layer group)</label><input type="text" id="rmgroup" required></div>
-      <div><label for="rmconfirm">Type the service name to confirm</label><input type="text" id="rmconfirm" required></div>
+      <div><label for="rmconfirm" id="rmconfirmlabel">Type the service name to confirm</label><input type="text" id="rmconfirm" required></div>
       <div class="full"><div class="row"><button id="rmgo" type="submit" disabled style="background:var(--rust)">Remove service</button><span class="hint" id="rmnote"></span></div>
       <div class="error" id="rmerr" role="alert"></div></div>
     </form>
@@ -255,21 +260,22 @@ async function loadHistory() {
     const rows = [];
     (running || []).forEach(r => {
       const tr = el("tr"), st = el("td"); st.append(el("span", r.status, "pill"));
-      tr.append(el("td", "now"), el("td", r.user), el("td", r.workspace + ":" + r.group + (r.service ? " (" + r.service.toUpperCase() + ")" : "")), el("td", "batch of " + r.counts.total), st, el("td", ""));
+      tr.append(el("td", "now"), el("td", r.user), el("td", r.workspace + ":" + r.group + (r.service ? " (" + r.service.toUpperCase() + ")" : "") + (r.env === "prod" ? " [PROD]" : "")), el("td", "batch of " + r.counts.total), st, el("td", ""));
       rows.push(tr);
     });
     jobs.forEach(j => {
       const tr = el("tr"), d = new Date((j.finished || j.created || 0) * 1000);
       const st = el("td"); st.append(el("span", j.status, "pill" + (j.status === "failed" ? " failed" : "")));
       const tile = el("td", j.tile); if (j.error) tile.title = j.error;
-      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group + (j.service ? " (" + j.service.toUpperCase() + ")" : "")), tile, st, el("td", j.seconds != null ? j.seconds.toFixed(0) + " s" : ""));
+      tr.append(el("td", d.toLocaleString()), el("td", j.user), el("td", j.workspace + ":" + j.group + (j.service ? " (" + j.service.toUpperCase() + ")" : "") + (j.env === "prod" ? " [PROD]" : "")), tile, st, el("td", j.seconds != null ? j.seconds.toFixed(0) + " s" : ""));
       rows.push(tr);
     });
     $("history").replaceChildren(...rows);
   } catch (e) {}
 }
 let vtimer = null, boxOk = false, running = false;
-function syncButton(label) { $("go").textContent = label; $("go").disabled = running || !boxOk; }
+function isProd() { return $("env").value === "prod"; }
+function syncButton(label) { $("go").textContent = label; $("go").disabled = running || !boxOk || (isProd() && !$("prodok").checked); }
 async function validateBox() {
   const text = $("blob").value;
   if (!text.trim()) { $("preview").replaceChildren(); boxOk = false; syncButton("Add COGs"); return; }
@@ -297,12 +303,13 @@ $("form").addEventListener("submit", async (ev) => {
   try {
     const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
-                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value }) });
+                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value, confirm_prod: isProd() && $("prodok").checked }) });
     $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.counts.total + " COG(s) into " + job.workspace + ":" + job.group;
     renderJob(job); timer = setInterval(() => poll(job.id), 1000);
   } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }
 });
-function syncRemove() { const g = $("rmgroup").value.trim(); $("rmgo").disabled = running || !g || $("rmconfirm").value !== g || !$("rmws").value.trim(); }
+function expectedConfirm() { const g = $("rmgroup").value.trim(), w = $("rmws").value.trim(); return isProd() ? w + ":" + g : g; }
+function syncRemove() { const g = $("rmgroup").value.trim(); $("rmgo").disabled = running || !g || !$("rmws").value.trim() || $("rmconfirm").value !== expectedConfirm(); }
 ["rmws", "rmgroup", "rmconfirm"].forEach(id => $(id).addEventListener("input", syncRemove));
 $("rmform").addEventListener("submit", async (ev) => {
   ev.preventDefault(); $("rmerr").style.display = "none"; $("result").style.display = "none";
@@ -321,7 +328,18 @@ async function pollRemove(id) {
     if (["done", "partial", "failed"].includes(job.status)) { clearInterval(timer); running = false; $("rmconfirm").value = ""; syncRemove(); syncButton($("go").textContent); renderResult(job); loadHistory(); loadWorkspaces(); }
   } catch (e) { clearInterval(timer); running = false; syncRemove(); syncButton($("go").textContent); $("rmerr").textContent = e.message; $("rmerr").style.display = "block"; }
 }
-$("env").addEventListener("change", loadWorkspaces);
+function applyEnv() {
+  const prod = isProd();
+  document.body.classList.toggle("prod", prod);
+  $("prodbar").style.display = prod ? "block" : "none";
+  $("prodrow").style.display = prod ? "flex" : "none";
+  if (!prod) $("prodok").checked = false;
+  $("rmconfirmlabel").textContent = prod ? "Type workspace:service to confirm (PRODUCTION)" : "Type the service name to confirm";
+  syncButton($("go").textContent); syncRemove();
+}
+$("prodok").addEventListener("change", () => syncButton($("go").textContent));
+$("env").addEventListener("change", () => { applyEnv(); loadWorkspaces(); $("svcinfo").textContent = "Pick an existing service or type a new name."; });
+applyEnv();
 $("workspace").addEventListener("change", () => { loadGroups(); showService(); });
 $("group").addEventListener("change", showService);
 loadWorkspaces(); loadHistory();

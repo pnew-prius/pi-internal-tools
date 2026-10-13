@@ -1,14 +1,22 @@
-"""Web UI + API for adding COGs to WMTS services.
+"""Web UI + API for adding COGs to WMTS and WMS services.
+
+PROD is fail-closed: it is offered only if WMTS_ENVS includes "prod" AND the user is listed in WMTS_PROD_USERS (comma-separated
+emails) or is a member of the Entra group WMTS_PROD_GROUP_ID (read from the App Service sign-in claims). Every prod change also needs
+an explicit confirmation, and on prod the app only modifies services it created itself.
 
 Sign-in: in Azure, App Service Authentication (Microsoft Entra, restricted to a security group) puts the user in the
 X-MS-CLIENT-PRINCIPAL-NAME header. Locally set WMTS_LOCAL=1 (and optionally WMTS_DEV_USER) to run without it.
 Run locally:  python app.py   (see README)
 """
+import base64
+import contextlib
+import json
 import os
 import re
 
 from flask import Flask, jsonify, render_template, request
 
+import gs_client
 import safety
 from add_cog import SERVICE_TYPES, group_marker, group_service_type, group_state
 from gs_client import call
@@ -24,6 +32,11 @@ def create_app(manager=None):
     app.config["MAX_CONTENT_LENGTH"] = 256 * 1024  # a 100-line batch is ~15 KB; refuse anything much larger
     app.config["TEMPLATES_AUTO_RELOAD"] = os.environ.get("WMTS_LOCAL") == "1"  # edit-and-refresh while developing locally
     envs = [e.strip() for e in os.environ.get("WMTS_ENVS", "dev").split(",") if e.strip()]
+    prod_users = {u.strip().lower() for u in os.environ.get("WMTS_PROD_USERS", "").split(",") if u.strip()}
+    prod_group = os.environ.get("WMTS_PROD_GROUP_ID", "").strip()
+    prod_max_batch = int(os.environ.get("WMTS_PROD_MAX_BATCH", "25"))
+    if "prod" in envs and not (prod_users or prod_group):
+        envs.remove("prod")   # fail closed: prod requested but nobody is authorized to use it
     data_dir = os.environ.get("WMTS_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
     mgr = manager or JobManager(JsonlStore(os.path.join(data_dir, "history.jsonl")))
     app.config["MANAGER"] = mgr
@@ -36,6 +49,36 @@ def create_app(manager=None):
             return os.environ.get("WMTS_DEV_USER", "local-dev")
         return None
 
+    def principal_groups():
+        """Group object IDs from the App Service sign-in claims (X-MS-CLIENT-PRINCIPAL is base64 JSON)."""
+        raw = request.headers.get("X-MS-CLIENT-PRINCIPAL")
+        if not raw:
+            return set()
+        try:
+            claims = json.loads(base64.b64decode(raw)).get("claims", [])
+        except Exception:
+            return set()
+        return {c.get("val") for c in claims if c.get("typ") in ("groups", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups")}
+
+    def user_can_prod():
+        if "prod" not in envs:
+            return False
+        user = (current_user() or "").lower()
+        return user in prod_users or bool(prod_group and prod_group in principal_groups())
+
+    def allowed_envs():
+        return [e for e in envs if e != "prod" or user_can_prod()]
+
+    def prod_session(env, write=False):
+        return gs_client.prod_access(write=write) if env == "prod" else contextlib.nullcontext()
+
+    class Forbidden(Exception):
+        pass
+
+    @app.errorhandler(Forbidden)
+    def forbidden(e):
+        return jsonify(error=str(e)), 403
+
     @app.before_request
     def require_user():
         if request.path == "/healthz":
@@ -45,9 +88,12 @@ def create_app(manager=None):
         return None
 
     def env_or_400():
-        env = request.values.get("env") or (request.get_json(silent=True) or {}).get("env") or envs[0]
-        if env not in envs:
-            raise ValidationError(f"Environment '{env}' is not enabled here (enabled: {', '.join(envs)}).")
+        allowed = allowed_envs()
+        env = request.values.get("env") or (request.get_json(silent=True) or {}).get("env") or allowed[0]
+        if env == "prod" and "prod" in envs and not user_can_prod():
+            raise Forbidden("You are not authorized to use PROD.")
+        if env not in allowed:
+            raise ValidationError(f"Environment '{env}' is not enabled here (enabled: {', '.join(allowed) or 'none'}).")
         return env
 
     class UnsupportedMedia(Exception):
@@ -71,16 +117,17 @@ def create_app(manager=None):
 
     @app.get("/")
     def index():
-        return render_template("index.html", user=current_user(), envs=envs)
+        return render_template("index.html", user=current_user(), envs=allowed_envs())
 
     @app.get("/api/me")
     def me():
-        return jsonify(user=current_user(), envs=envs)
+        return jsonify(user=current_user(), envs=allowed_envs(), prod_max_batch=prod_max_batch)
 
     @app.get("/api/workspaces")
     def workspaces():
         env = env_or_400()
-        c, r = call(env, "GET", "/rest/workspaces.json")
+        with prod_session(env):
+            c, r = call(env, "GET", "/rest/workspaces.json")
         ws = r.get("workspaces") if isinstance(r, dict) else None
         return jsonify(workspaces=sorted(w["name"] for w in ws["workspace"]) if isinstance(ws, dict) else [])
 
@@ -88,7 +135,8 @@ def create_app(manager=None):
     def groups():
         env = env_or_400()
         ws = check_name("Workspace", request.args.get("workspace"))
-        c, r = call(env, "GET", f"/rest/workspaces/{ws}/layergroups.json")
+        with prod_session(env):
+            c, r = call(env, "GET", f"/rest/workspaces/{ws}/layergroups.json")
         lg = r.get("layerGroups") if isinstance(r, dict) else None
         return jsonify(groups=sorted(g["name"] for g in lg["layerGroup"]) if isinstance(lg, dict) else [])
 
@@ -97,9 +145,10 @@ def create_app(manager=None):
         env = env_or_400()
         ws = check_name("Workspace", request.args.get("workspace"))
         group = check_name("Service", request.args.get("group"))
-        st = group_state(env, ws, group)
+        with prod_session(env):
+            st = group_state(env, ws, group)
+            stype = group_service_type(env, ws, group, st[0]) if st else None
         host = PUBLIC_HOSTS[env]
-        stype = group_service_type(env, ws, group, st[0]) if st else None
         urls = {"wmts": f"https://{host}/{ws}/gwc/service/wmts?REQUEST=GetCapabilities",
                 "wms": f"https://{host}/{ws}/ows?service=WMS&request=GetCapabilities&version=1.3.0"}
         tile = (f"https://{host}/gwc/service/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&LAYER={ws}:{group}&STYLE="
@@ -136,6 +185,15 @@ def create_app(manager=None):
         items, errors = parse_batch(batch_text(body))
         if errors:
             return jsonify(error=f"{len(errors)} problem(s) in the COG list; nothing was started.", problems=errors), 400
+        if env == "prod":
+            if body.get("confirm_prod") is not True:
+                raise ValidationError("Tick the box to confirm you are changing PRODUCTION. Nothing was started.")
+            if len(items) > prod_max_batch:
+                raise ValidationError(f"At most {prod_max_batch} COGs per run on PROD ({len(items)} pasted); seeding competes with live traffic.")
+            with prod_session(env):
+                st = group_state(env, ws, group)
+            if st is not None and group_marker(st[0]) is None:
+                raise Forbidden("On PROD this app only modifies services it created. This service was built another way, so it is not touched.")
         try:
             safety.assert_not_on_prod(env, ws)
         except PermissionError as e:
@@ -155,15 +213,17 @@ def create_app(manager=None):
         env = env_or_400()
         ws = check_name("Workspace", body.get("workspace"))
         group = check_name("Service", body.get("group"))
-        if body.get("confirm") != group:
-            raise ValidationError("Type the exact service name to confirm the removal.")
+        expected = f"{ws}:{group}" if env == "prod" else group
+        if body.get("confirm") != expected:
+            raise ValidationError(f"Type exactly {expected} to confirm the removal." if env == "prod" else "Type the exact service name to confirm the removal.")
         try:
             safety.assert_not_on_prod(env, ws)
         except PermissionError as e:
             return jsonify(error=str(e)), 403
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
-        st = group_state(env, ws, group)
+        with prod_session(env):
+            st = group_state(env, ws, group)
         if st is None:
             return jsonify(error=f"Service {ws}:{group} does not exist."), 404
         if group_marker(st[0]) is None:

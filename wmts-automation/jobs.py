@@ -1,11 +1,13 @@
 """Background batch runner. A job = an ordered list of COGs added ONE AT A TIME with the same steps each time.
 One job per service at a time (group updates are not safe to run concurrently). A failed COG does not stop the
 rest ("carry on"): the job ends 'done' (all ok), 'partial' (some failed) or 'failed' (all failed)."""
+import contextlib
 import threading
 import time
 import uuid
 
 import add_cog as add_cog_mod
+import gs_client
 import remove_service as remove_mod
 from add_cog import STEPS
 
@@ -57,8 +59,12 @@ class JobManager:
                    "counts": {"total": 1, "done": 0, "skipped": 0, "failed": 0}}
             self.jobs[job["id"]] = job
         if run:
-            threading.Thread(target=self._run_remove, args=(job,), daemon=True).start()
+            threading.Thread(target=self._run_remove_session, args=(job,), daemon=True).start()
         return job
+
+    def _run_remove_session(self, job):
+        with self._session(job):
+            self._run_remove(job)
 
     def _run_remove(self, job):
         job["status"], job["started"] = "running", time.time()
@@ -109,7 +115,16 @@ class JobManager:
             job["history_error"] = f"{type(e).__name__}: {e}"[:200]
             print(f"[jobs] could not save history for {job['id']}: {job['history_error']}", flush=True)
 
+    @staticmethod
+    def _session(job):
+        """Jobs on prod run inside an explicit prod write session; dev jobs need nothing."""
+        return gs_client.prod_access(write=True) if job["env"] == "prod" else contextlib.nullcontext()
+
     def _run(self, job, create_workspace):
+        with self._session(job):
+            self._run_inner(job, create_workspace)
+
+    def _run_inner(self, job, create_workspace):
         job["status"] = "running"
         job["started"] = time.time()
         stopped = None

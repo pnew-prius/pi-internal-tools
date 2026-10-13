@@ -17,6 +17,7 @@ TEMPLATE_STORE = tuple(os.environ.get("WMTS_TEMPLATE_STORE", "COPE-S26/codes26-0
 SEED_ZOOM = (0, 15)       # pre-seed range
 TRUNCATE_ZOOM = (0, 24)   # truncate must cover EVERY zoom: live-rendered z16+ tiles go stale at seams too
 EXPIRE_CLIENTS = int(os.environ.get("WMTS_EXPIRE_CLIENTS", "600"))  # seconds browsers may reuse a tile (0 = no-cache); short because tiles change when COGs are added
+SEED_THREADS = {"dev": 4, "prod": 2}   # prod serves customers: seed with fewer threads so it is not starved
 STEPS = ["workspace", "publish", "group_update", "tile_config", "truncate", "seed", "reconcile"]
 SERVICE_TYPES = ("wmts", "wms")   # wmts = cached tiles (seeded z0-15); wms = live render, no tile cache
 TYPE_KEY = "wmtsbuilder.service_type"
@@ -245,7 +246,7 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
         wait_seed_idle(env, L)
         done("truncate")
         start("seed")
-        seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=4)
+        seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=SEED_THREADS.get(env, 2))
         m["tiles_job_total"] = wait_seed_idle(env, L)
         done("seed", f"{m['tiles_job_total']} tiles")
 

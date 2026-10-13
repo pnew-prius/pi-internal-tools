@@ -214,3 +214,24 @@ def test_remove_via_the_app_clears_tiles_and_deletes_the_empty_workspace(ws, tmp
     assert j["status"] == "done" and j["items"][0]["result"]["workspace_deleted"] is True
     assert tiles_in_cache(gid) == 0
     assert ws not in {w["name"] for w in call("dev", "GET", "/rest/workspaces.json")[1]["workspaces"]["workspace"]}
+
+
+def test_prod_through_the_app_is_read_only_here_and_refuses_unconfirmed_writes(tmp_path, monkeypatch):
+    """Real PROD, READ-ONLY: lists work for an authorized user; every write path is refused before anything is sent.
+    This suite never writes to prod."""
+    monkeypatch.setenv("WMTS_ENVS", "dev,prod")
+    monkeypatch.setenv("WMTS_PROD_USERS", "live@test")
+    mgr = JobManager(JsonlStore(str(tmp_path / "h.jsonl")))
+    c = app_mod.create_app(mgr).test_client()
+    ok, other = {"X-MS-CLIENT-PRINCIPAL-NAME": "live@test"}, {"X-MS-CLIENT-PRINCIPAL-NAME": "intruder@test"}
+    assert c.get("/api/me", headers=ok).get_json()["envs"] == ["dev", "prod"]
+    assert c.get("/api/me", headers=other).get_json()["envs"] == ["dev"]
+    names = c.get("/api/workspaces?env=prod", headers=ok).get_json()["workspaces"]
+    assert "COPE-S26" in names and len(names) > 50
+    assert c.get("/api/groups?env=prod&workspace=COPE-S26", headers=ok).status_code == 200
+    assert c.get("/api/workspaces?env=prod", headers=other).status_code == 403
+    body = {"env": "prod", "workspace": "NOPE-LIVE", "group": "X", "blob_text": blob(1)}
+    assert c.post("/api/jobs", json=body, headers=ok).status_code == 400                       # no confirm_prod
+    assert c.post("/api/jobs", json=dict(body, confirm_prod=True), headers=other).status_code == 403
+    assert c.post("/api/remove", json={"env": "prod", "workspace": "COPE-S26", "group": "x", "confirm": "x"}, headers=ok).status_code == 400
+    assert not mgr.jobs                                                                          # nothing was ever started

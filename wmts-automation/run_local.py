@@ -1,4 +1,4 @@
-"""Start the app locally against the DEV GeoServer.
+"""Start the app locally against the DEV GeoServer (add --prod to also offer PROD to your own user).
 Credential: your `az login` -> Key Vault `pi-geoserver`/`geoadmin` (or set GEOSERVER_PASS to skip Key Vault).
 The empty extension dir works around the corrupted costmanagement CLI extension that breaks every `az` call on this machine."""
 import os
@@ -16,6 +16,10 @@ if not os.environ.get("WMTS_DEV_USER"):
         os.environ["WMTS_DEV_USER"] = subprocess.run("az account show --query user.name -o tsv", capture_output=True, text=True, shell=True).stdout.strip() or "local-dev"
     except Exception:
         os.environ["WMTS_DEV_USER"] = "local-dev"
+if "--prod" in sys.argv:
+    # opt-in: offer PROD in the Environment dropdown to YOUR signed-in user only. Every prod change still needs the confirmation box.
+    os.environ["WMTS_ENVS"] = "dev,prod"
+    os.environ["WMTS_PROD_USERS"] = os.environ["WMTS_DEV_USER"]
 os.chdir(here)
 sys.path.insert(0, here)
 import app  # noqa: E402
