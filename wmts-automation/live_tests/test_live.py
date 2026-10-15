@@ -96,6 +96,44 @@ def test_batch_via_app_carries_on_past_a_missing_file(ws, tmp_path):
     assert group_state("dev", ws, "Svc")[1] == ["ww26-01", "ww26-02"]
 
 
+def _tile_names(layer):
+    """Names of the cached tiles of a tile layer in the shared blob cache."""
+    x = call("dev", "GET", f"/gwc/rest/layers/{layer}.xml", accept="text/xml")[1]
+    gid = re.search(r"<id>(.*?)</id>", x).group(1)
+    p = subprocess.run(f'az storage blob list --account-name pigeoserverprod --container-name tilecache --prefix "{gid}/" '
+                       '--auth-mode login --num-results 500000 --query "[].name" -o tsv', capture_output=True, text=True, shell=True)
+    return set(p.stdout.split())
+
+
+def _assert_no_footprint_has_missing_tiles(ws, L):
+    """Re-seeding any COG's own footprint must find nothing missing (seed only fills what is absent)."""
+    from add_cog import member_footprints
+    from gwc import seed_request, wait_seed_idle
+    for tile, fp in member_footprints("dev", ws, "Svc").items():
+        before = _tile_names(L)
+        seed_request("dev", L, "seed", fp, 0, 15, threads=4)
+        wait_seed_idle("dev", L)
+        added = _tile_names(L) - before
+        assert not added, f"{len(added)} tiles were missing inside {tile}'s footprint"
+
+
+def test_batch_and_single_add_leave_every_footprint_fully_seeded(ws, tmp_path):
+    """Regression (2026-10-15). Seeding only each new COG's own box left holes in the EARLIER COGs (a later truncate clears
+    their seams): 144 missing tiles over 4 adjoining COGs. A batch seeds after the last truncate, and a single add also seeds
+    the members touching the new COG. The group's whole bounding rectangle is NOT seeded (it only adds empty tiles)."""
+    mgr = JobManager(JsonlStore(str(tmp_path / "h.jsonl")))
+    c = app_mod.create_app(mgr).test_client()
+    H = {"X-MS-CLIENT-PRINCIPAL-NAME": "live@test"}
+    text = "\n".join(blob(n) for n in (1, 2, 3))
+    r = c.post("/api/jobs", json={"workspace": ws, "group": "Svc", "blob_text": text}, headers=H)
+    j = wait_job(c, r.get_json()["job"]["id"])
+    assert j["status"] == "done" and j["seed"]["status"] == "done"
+    L = f"{ws}:Svc"
+    _assert_no_footprint_has_missing_tiles(ws, L)                          # after the batch
+    add_cog("dev", ws, "Svc", "ww26-04", blob(4))                           # a single add to the existing service
+    _assert_no_footprint_has_missing_tiles(ws, L)
+
+
 def test_refresh_repairs_a_failed_add(ws, monkeypatch):
     real = add_cog_mod.seed_request
 

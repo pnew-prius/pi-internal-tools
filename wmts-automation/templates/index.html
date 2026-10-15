@@ -188,6 +188,10 @@ function urlRow(label, url, note) {
 }
 function renderSync(job) {
   const el2 = $("syncrow"); el2.replaceChildren();
+  if (job.seed && job.seed.status !== "skipped") {
+    const d = job.seed, lab = {pending: "waiting for the last COG", running: "in progress", done: "done", failed: "FAILED"}[d.status] || d.status;
+    el2.append(el("div", "Seed service tiles (once, after the last COG): " + lab + (d.detail ? " - " + d.detail : "") + (d.seconds != null && d.status === "done" ? " (" + d.seconds + " s)" : ""), d.status === "failed" ? "prob" : "hint"));
+  }
   if (job.env !== "prod" || !job.sync) return;
   const s = job.sync, label = {pending: "waiting", running: "in progress", done: "done", failed: "FAILED", skipped: "skipped"}[s.status] || s.status;
   const line = el("div", "Customer-facing GeoServer: " + label + (s.detail ? " - " + s.detail : "") + (s.seconds != null && s.status === "done" ? " (" + s.seconds + " s)" : ""), s.status === "failed" ? "prob" : "hint");
@@ -240,6 +244,7 @@ function renderResult(job) {
              el("span", c.done + " added, " + c.skipped + " already in the service (skipped), " + c.failed + " failed."));
   const p = el("p"); p.append("Service: ", el("code", job.workspace + ":" + job.group)); box.append(p);
   if (job.error) box.append(el("p", job.error, "prob"));
+  if (job.seed && job.seed.status === "failed") box.append(el("p", "Tiles were not pre-cached: " + job.seed.detail, "prob"));
   if (job.sync && job.sync.status === "failed") box.append(el("p", "Customers may NOT see this change yet: " + job.sync.detail, "prob"));
   if (job.sync && job.sync.status === "skipped" && job.sync.mode === "none") box.append(el("p", job.sync.detail, "prob"));
   if (job.history_error) box.append(el("p", "Note: the history could not be saved (" + job.history_error + "). The adds themselves were not affected.", "hint"));

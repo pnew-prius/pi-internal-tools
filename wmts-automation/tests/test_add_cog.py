@@ -303,3 +303,79 @@ def test_remove_keeps_a_workspace_that_still_has_other_services(fake, monkeypatc
     add_cog("dev", WS, "B", "t-02", "Cust/proj/t-02-RGB.tif")
     out = rs.remove_service("dev", WS, "A", delete_empty_workspace=True)
     assert out["workspace_deleted"] is False and WS in fake.workspaces and group_state("dev", WS, "B") is not None
+
+
+# --- seeding (dev experiments 2026-10-15): a COG's truncate also clears its neighbours' seams, so seed it AND the members touching it ---
+
+def _same(a, b):
+    return all(abs(x - y) < 1.0 for x, y in zip(a, b))
+
+
+def test_a_joining_cog_seeds_its_own_footprint_and_the_neighbour_it_touches(fake):
+    fake.workspaces.add(WS)
+    a = add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    b = add_cog("dev", WS, G, "t-02", "Cust/proj/t-02-RGB.tif")        # t-02 overlaps t-01
+    tail = fake.seeds[-3:]
+    assert [s[0] for s in tail] == ["truncate", "seed", "seed"] and all(s[1:3] == (0, 15) for s in tail[1:])
+    assert tail[0][3] == b["footprint_3857"] and tail[1][3] == b["footprint_3857"]       # new footprint first
+    assert _same(tail[2][3], a["footprint_3857"])                                           # then t-01, whose seams were cleared
+    bounds = group_state("dev", WS, G)[0]["bounds"]
+    assert all(not _same(s[3], [bounds["minx"], bounds["miny"], bounds["maxx"], bounds["maxy"]]) for s in fake.seeds)   # never the whole rectangle
+    assert b["seed_needed"] is None
+
+
+def test_a_far_away_cog_does_not_reseed_the_others(fake):
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    n = len(fake.seeds)
+    c = add_cog("dev", WS, G, "t-03", "Cust/proj/t-03-RGB.tif")        # a different UTM zone, hundreds of km away
+    assert [s[0] for s in fake.seeds[n:]] == ["truncate", "seed"] and fake.seeds[-1][3] == c["footprint_3857"]
+
+
+def test_refreshing_a_member_seeds_it_and_its_neighbours(fake):
+    fake.workspaces.add(WS)
+    add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif")
+    b = add_cog("dev", WS, G, "t-02", "Cust/proj/t-02-RGB.tif")
+    n = len(fake.seeds)
+    r = add_cog("dev", WS, G, "t-02", "Cust/proj/t-02-RGB.tif", refresh=True)
+    assert r["group_action"].startswith("refreshed")
+    assert [s[0] for s in fake.seeds[n:]] == ["truncate", "seed", "seed"] and fake.seeds[n + 1][3] == b["footprint_3857"]
+
+
+def test_deferred_seed_does_no_seeding_and_says_what_is_needed(fake):
+    fake.workspaces.add(WS)
+    steps = []
+    m = add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif", seed="defer", progress=lambda *a: steps.append(a))
+    assert [s[0] for s in fake.seeds] == ["truncate"]
+    assert m["seed_needed"] == m["footprint_3857"] and ("seed", "skipped") in [s[:2] for s in steps]
+    m = add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif", seed="defer", refresh=True)
+    assert m["seed_needed"] == m["footprint_3857"]
+
+
+def test_seed_targets_adds_only_members_within_the_margin_and_never_duplicates():
+    from add_cog import seed_targets
+    new = [0.0, 0.0, 10000.0, 10000.0]
+    members = {"same": list(new), "near": [14000.0, 0.0, 20000.0, 10000.0],      # 4 km away: inside the 6 km margin
+               "far": [17000.0, 0.0, 30000.0, 10000.0], "elsewhere": [1e6, 1e6, 1.1e6, 1.1e6]}   # 7 km away / far away
+    out = seed_targets([new], members)
+    assert out == [new, [14000.0, 0.0, 20000.0, 10000.0]]
+
+
+def test_bad_seed_mode_is_rejected(fake):
+    with pytest.raises(ValueError):
+        add_cog("dev", WS, G, "t-01", "Cust/proj/t-01-RGB.tif", seed="later")
+
+
+def test_wait_seed_idle_does_not_mistake_a_not_yet_listed_task_for_finished(fake, monkeypatch):
+    import gwc
+    polls = iter([[], [], [[1, 9, 1, 1, 1]], [[9, 9, 0, 1, 1]], []])     # GWC lists the task only after a short delay
+    monkeypatch.setattr(gwc, "call", lambda *a, **k: (200, {"long-array-array": next(polls)}))
+    assert gwc.wait_seed_idle("dev", "X:Y", poll=0) == 9                   # waited for it to appear AND finish
+
+
+def test_wait_seed_idle_returns_after_the_grace_period_if_no_task_ever_shows(fake, monkeypatch):
+    import gwc
+    monkeypatch.setattr(gwc, "call", lambda *a, **k: (200, {"long-array-array": []}))
+    clock = iter(range(0, 100))
+    monkeypatch.setattr(gwc.time, "time", lambda: next(clock))
+    assert gwc.wait_seed_idle("dev", "X:Y", poll=0, appear_grace=5) == 0

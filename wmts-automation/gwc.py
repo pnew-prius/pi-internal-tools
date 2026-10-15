@@ -38,14 +38,18 @@ def seed_request(env, layer, kind, bbox, z0, z1, fmt="image/png", gridset="EPSG:
     return call(env, "POST", f"/gwc/rest/seed/{layer}.json", body)
 
 
-def wait_seed_idle(env, layer, timeout=3600, poll=1.5):
-    """Block until no seed/truncate task is running for the layer. Returns the largest job total seen."""
-    peak, t0 = 0, time.time()
+def wait_seed_idle(env, layer, timeout=3600, poll=1.5, appear_grace=6.0):
+    """Block until the seed/truncate just submitted for the layer has finished. Returns the largest job total seen.
+    GWC lists a task only once it is scheduled, so an empty list straight after a POST does not mean done: wait up to
+    appear_grace seconds for a task to show up (a task that finishes before the first look is never seen; that is fine)."""
+    peak, seen, t0 = 0, False, time.time()
     while time.time() - t0 < timeout:
         s = call(env, "GET", f"/gwc/rest/seed/{layer}.json")[1]
         tasks = s.get("long-array-array", []) if isinstance(s, dict) else []
-        if not tasks:
+        if tasks:
+            seen = True
+            peak = max(peak, max(t[1] for t in tasks))
+        elif seen or time.time() - t0 >= appear_grace:
             return peak
-        peak = max(peak, max(t[1] for t in tasks))
         time.sleep(poll)
     raise TimeoutError(f"seed on {layer} exceeded {timeout}s")

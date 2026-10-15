@@ -41,6 +41,30 @@ class JobManager:
             return {"mode": None, "status": "skipped", "detail": "not needed on dev (one server serves both admin and customers)"}
         return {"mode": mode, "status": "pending", "detail": None}
 
+    def _seed_job(self, job):
+        """Once per job, after the last COG: seed the footprints of the COGs added or refreshed and of the members touching them.
+        Each add's bounded truncate also removes tiles along its neighbours' seams, so seeding per COG would leave holes in
+        the earlier COGs; the batch defers seeding and does it here, after the last truncate.
+        A seed failure never fails the COGs (they are published and render live), but the job is reported 'partial'."""
+        s = job["seed"]
+        needs = [it["result"].get("seed_needed") for it in job["items"] if it["status"] == "done" and it.get("result")]
+        needs = [n for n in needs if n]
+        if job["service"] != "wmts" or not needs:
+            s.update(status="skipped", detail="nothing to seed")
+            return
+        s.update(status="running", detail=f"seeding {len(needs)} COG footprint(s) and their neighbours (zoom 0-15)")
+        t0 = time.time()
+        try:
+            tiles, boxes = add_cog_mod.seed_affected(job["env"], job["workspace"], job["group"], needs)
+            s.update(status="done", seconds=round(time.time() - t0, 1), tiles=tiles,
+                     detail=f"{tiles} tiles over {boxes} footprint(s)")
+        except Exception as e:
+            s.update(status="failed", seconds=round(time.time() - t0, 1),
+                     detail=f"{str(e)[:300]} - the COGs are published but their tiles are not pre-cached; run the add again with Refresh")
+        if s["status"] == "failed":  # history keeps one row per COG; a seed row is added only when it needs attention
+            self._safe_record(job, {"index": job["counts"]["total"], "tile": "(seed service tiles)", "blob_path": "", "status": "failed",
+                                    "error": s["detail"], "seconds": s.get("seconds"), "started": job.get("started"), "finished": time.time()})
+
     def _sync_job(self, job, changed):
         """Once per job, after all seeding: make the customer-facing prod GeoServer instances see the change. Never fails the COGs."""
         s = job["sync"]
@@ -75,7 +99,8 @@ class JobManager:
                    "status": "queued", "created": time.time(), "refresh": refresh, "service": service, "current": None,
                    "items": [{"index": i, "tile": it["tile"], "blob_path": it["path"], "status": "pending", "steps": _blank_steps(),
                               "result": None, "error": None, "seconds": None} for i, it in enumerate(items)],
-                   "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}, "sync": self._sync_init(env, sync_mode)}
+                   "counts": {"total": len(items), "done": 0, "skipped": 0, "failed": 0}, "sync": self._sync_init(env, sync_mode),
+                   "seed": {"status": "pending" if service == "wmts" else "skipped", "detail": None if service == "wmts" else "not needed for WMS"}}
             self.jobs[job["id"]] = job
         if run:
             threading.Thread(target=self._run, args=(job, create_workspace), daemon=True).start()
@@ -175,7 +200,7 @@ class JobManager:
                 try:
                     m = add_cog_mod.add_cog(job["env"], job["workspace"], job["group"], item["tile"], item["blob_path"],
                                             progress=self._progress(item), create_workspace=create_workspace, refresh=job["refresh"],
-                                            service=job["service"])
+                                            service=job["service"], seed="defer")
                     if m.get("skipped"):
                         for s in item["steps"]:
                             if s["status"] == "pending":
@@ -196,7 +221,8 @@ class JobManager:
                 item["seconds"] = round(item["finished"] - item["started"], 1)
                 self._safe_record(job, item)
                 create_workspace = False  # the first COG created it (or it already existed)
-            self._sync_job(job, changed=job["counts"]["done"] > 0)   # ONCE, after the last COG is seeded
+            self._seed_job(job)                                      # ONCE, after the last COG is added
+            self._sync_job(job, changed=job["counts"]["done"] > 0)   # ONCE, after the service is seeded
         except BaseException as e:  # anything unexpected: stop, but never report COGs that did not run as done
             stopped = f"{type(e).__name__}: {e}"[:300]
             job["error"] = f"The job stopped unexpectedly: {stopped}"
@@ -216,7 +242,7 @@ class JobManager:
             with self._lock:
                 self._active.discard((job["env"], job["workspace"], job["group"]))
             job["current"] = None
-            job["status"] = "failed" if c["failed"] == c["total"] else ("partial" if c["failed"] else "done")
+            job["status"] = "failed" if c["failed"] == c["total"] else ("partial" if c["failed"] or job["seed"]["status"] == "failed" else "done")
 
     def get(self, job_id):
         return self.jobs.get(job_id)

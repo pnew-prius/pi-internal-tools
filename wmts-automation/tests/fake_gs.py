@@ -98,8 +98,13 @@ class FakeGS:
         g = m(r"/gwc/rest/seed/(.+)\.json", path)
         if g and method == "POST":
             self.seeds.append((body["seedRequest"]["type"], body["seedRequest"]["zoomStart"], body["seedRequest"]["zoomStop"],
-                               [float(v) for v in body["seedRequest"]["bounds"]["coords"]["double"]], body["seedRequest"].get("threadCount"))); return 200, ""
+                               [float(v) for v in body["seedRequest"]["bounds"]["coords"]["double"]], body["seedRequest"].get("threadCount")))
+            self.pending_task_polls = 1   # like GWC: the task is listed for a while, then disappears when it finishes
+            return 200, ""
         if g and method == "GET":
+            if getattr(self, "pending_task_polls", 0):
+                self.pending_task_polls -= 1
+                return 200, {"long-array-array": [[5, 10, 1, 1, 1]]}
             return 200, {"long-array-array": []}
         return 404, f"fake: unhandled {method} {path}"
 

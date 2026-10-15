@@ -51,7 +51,9 @@ def test_single_cog_job_runs_and_is_recorded_with_the_user(client):
     assert r.status_code == 202
     j = wait(c, r.get_json()["job"]["id"])
     assert j["status"] == "done" and j["user"] == "someone@priusintelli.com" and j["counts"] == {"total": 1, "done": 1, "skipped": 0, "failed": 0}
-    assert all(s["status"] == "done" for s in j["items"][0]["steps"])
+    steps = {s["name"]: s["status"] for s in j["items"][0]["steps"]}
+    assert steps.pop("seed") == "skipped" and all(v == "done" for v in steps.values())   # seeding is deferred to the job...
+    assert j["seed"]["status"] == "done" and fake.seeds[-1][0] == "seed"                 # ...and runs once at the end
     hist = c.get("/api/jobs", headers=H).get_json()["jobs"]
     assert [h["tile"] for h in hist] == ["t-01"] and hist[0]["batch"] == j["id"]
 
@@ -88,10 +90,10 @@ def test_cogs_already_in_service_are_skipped_unless_refresh(client):
     wait(c, post(c, BODY).get_json()["job"]["id"])
     n = len(fake.seeds)
     j = wait(c, post(c, dict(BODY, blob_text=ONE + "\nCust/proj/t-02-RGB.tif")).get_json()["job"]["id"])
-    assert [i["status"] for i in j["items"]] == ["skipped", "done"] and len(fake.seeds) == n + 2   # only t-02 truncated+seeded
+    assert [i["status"] for i in j["items"]] == ["skipped", "done"] and len(fake.seeds) == n + 3   # only t-02 truncated; t-02 and its neighbour t-01 seeded
     n = len(fake.seeds)
     j = wait(c, post(c, dict(BODY, blob_text=ONE, refresh=True)).get_json()["job"]["id"])
-    assert j["items"][0]["status"] == "done" and "refreshed" in j["items"][0]["result"]["group_action"] and len(fake.seeds) == n + 2
+    assert j["items"][0]["status"] == "done" and "refreshed" in j["items"][0]["result"]["group_action"] and len(fake.seeds) == n + 3   # truncate, seed t-01, seed neighbour t-02
 
 
 def test_failed_add_can_be_repaired_by_refresh(client, monkeypatch):
@@ -104,12 +106,14 @@ def test_failed_add_can_be_repaired_by_refresh(client, monkeypatch):
             raise RuntimeError("seed exploded")
         return real(*a, **k)
     monkeypatch.setattr(add_cog, "seed_request", flaky)
-    assert wait(c, post(c, BODY).get_json()["job"]["id"])["status"] == "failed"
+    j = wait(c, post(c, BODY).get_json()["job"]["id"])
+    assert j["status"] == "partial" and j["items"][0]["status"] == "done"            # the COG is published...
+    assert j["seed"]["status"] == "failed" and "Refresh" in j["seed"]["detail"]      # ...but its tiles were not cached: said so
     j = wait(c, post(c, BODY).get_json()["job"]["id"])                # plain re-run: member already there -> skipped, tiles still missing
-    assert j["items"][0]["status"] == "skipped"
+    assert j["items"][0]["status"] == "skipped" and j["seed"]["status"] == "skipped"
     state["fail"] = False
     j = wait(c, post(c, dict(BODY, refresh=True)).get_json()["job"]["id"])
-    assert j["status"] == "done" and fake.seeds[-1][0] == "seed"      # refresh finishes the job
+    assert j["status"] == "done" and j["seed"]["status"] == "done" and fake.seeds[-1][0] == "seed"   # refresh finishes the job
 
 
 def test_second_job_on_same_service_is_rejected_while_one_runs(client):
@@ -342,3 +346,25 @@ def test_an_unexpected_crash_marks_the_unrun_cogs_failed_never_done(fake, monkey
     assert [i["status"] for i in j["items"]] == ["done", "failed", "failed"]
     assert all("Not run" in i["error"] for i in j["items"][1:]) and "stopped unexpectedly" in j["error"]
     assert post(c, dict(BODY, blob_text=ONE)).status_code == 202            # the service lock was released
+
+
+def test_a_batch_seeds_once_after_the_last_truncate_covering_every_added_footprint(client):
+    """Each add's truncate clears its neighbours' seams, so a batch seeds only after the last truncate (0 gaps on dev)."""
+    c, mgr, fake = client
+    j = wait(c, post(c, dict(BODY, blob_text=THREE)).get_json()["job"]["id"])
+    assert j["status"] == "done" and j["counts"]["done"] == 3
+    kinds = [s[0] for s in fake.seeds]
+    first_seed = kinds.index("seed")
+    assert "truncate" not in kinds[first_seed:] and kinds[:first_seed] == ["truncate"] * 3     # every truncate happens before any seed
+    seeds = [s for s in fake.seeds if s[0] == "seed"]
+    assert len(seeds) >= 3 and all(s[1:3] == (0, 15) for s in seeds)
+    from add_cog import group_state
+    b = group_state("dev", "TESTWS", "Svc")[0]["bounds"]
+    assert [b["minx"], b["miny"], b["maxx"], b["maxy"]] not in [s[3] for s in seeds]          # never the empty bounding rectangle
+    assert j["seed"]["status"] == "done" and all({s["name"]: s["status"] for s in it["steps"]}["seed"] == "skipped" for it in j["items"])
+
+
+def test_wms_batch_never_seeds(client):
+    c, mgr, fake = client
+    j = wait(c, post(c, dict(BODY, blob_text=THREE, service_type="wms")).get_json()["job"]["id"])
+    assert j["status"] == "done" and j["seed"]["status"] == "skipped" and fake.seeds == []

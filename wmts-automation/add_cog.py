@@ -1,7 +1,14 @@
 """Add ONE COG to a WMTS service (a GWC-tiled GeoServer layer group).
 
 Stateless: everything is read from GeoServer, so it can run now, later, or resume after a failure.
-Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> bbox seed -> stray sweep.
+Order matters: publish -> add to group -> group bounds -> tile extent -> bbox truncate -> seed -> stray sweep.
+
+Seeding (dev experiments 2026-10-15): the bounded truncate of a new COG also removes tiles along the seams of the COGs
+next to it, and seeding only the new COG's own box does not bring them back (4 adjoining COGs seeded one at a time were
+missing 144 tiles inside the earlier footprints). So seeding covers the new footprint PLUS the footprints of members that
+touch it (seed_affected). A batch defers seeding and runs it once after the last truncate, which left 0 gaps. Seeding the
+group's whole bounding rectangle instead was tried and rejected: it only adds empty tiles (2,252 -> 6,458 tiles, a sample
+of the extra tiles was fully transparent). Adding a member does NOT empty the group's cache.
 """
 import os
 import random
@@ -151,15 +158,68 @@ def reconcile_stray_tile_layers(env, ws, group, settle_sec=3, include_group=Fals
     return deleted
 
 
-def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False, refresh=False, service="wmts"):
+NEIGHBOUR_MARGIN = 6000.0   # metres (EPSG:3857): a little over one 4x4 metatile at zoom 15 (about 4.9 km)
+
+
+def member_footprints(env, ws, group):
+    """{tile: [minx,miny,maxx,maxy] in EPSG:3857} for the members of the service (members whose coverage cannot be read are left out)."""
+    st = group_state(env, ws, group)
+    out = {}
+    for m in (st[1] if st else []):
+        c, r = call(env, "GET", f"/rest/workspaces/{ws}/coveragestores/{m}/coverages/{m}.json")
+        if c == 200 and isinstance(r, dict) and "coverage" in r:
+            cov = r["coverage"]
+            out[m] = bbox_to_3857(cov["nativeBoundingBox"], int(cov["srs"].split(":")[1]))
+    return out
+
+
+def _near(a, b, margin):
+    return not (a[2] + margin < b[0] or b[2] + margin < a[0] or a[3] + margin < b[1] or b[3] + margin < a[1])
+
+
+def seed_targets(boxes, member_fps, margin=NEIGHBOUR_MARGIN):
+    """The boxes to seed: `boxes` plus the footprint of every member within `margin` of one of them, without duplicates."""
+    out = [list(b) for b in boxes]
+    for fp in member_fps.values():
+        if any(all(abs(x - y) < 1.0 for x, y in zip(fp, o)) for o in out):
+            continue
+        if any(_near(fp, b, margin) for b in boxes):
+            out.append(list(fp))
+    return out
+
+
+def seed_affected(env, ws, group, boxes, progress=None):
+    """Seed (fill missing, z0-15) each of `boxes` [minx,miny,maxx,maxy in EPSG:3857] and the members that touch them, one box at a
+    time (GWC skips tiles that already exist, so re-covering a neighbour is cheap). Makes sure the tile extent covers the group first.
+    Returns (total of GWC job sizes, number of footprints seeded)."""
+    L = f"{ws}:{group}"
+    sync_tile_extent(env, ws, group)
+    targets = seed_targets(boxes, member_footprints(env, ws, group))
+    total = 0
+    for b in targets:
+        c, r = seed_request(env, L, "seed", b, SEED_ZOOM[0], SEED_ZOOM[1], threads=SEED_THREADS.get(env, 2))
+        if c != 200:
+            raise RuntimeError(f"seed request failed {c} {str(r)[:200]}")
+        total += wait_seed_idle(env, L)
+    if progress:
+        progress(total, len(targets))
+    return total, len(targets)
+
+
+def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=None, create_workspace=False, refresh=False, service="wmts",
+            seed="now"):
     """blob_path: path inside the sourceimagery container, e.g. 'Customer/project/tile-RGB.tif'.
     A COG already in the group is skipped, unless refresh=True: then its extent/truncate/seed are redone (repairs a failed add
     or picks up a replaced file).
     progress(step, status, seconds=None, detail=None) is called as each step starts ('running') and ends ('done').
     service: "wmts" (cached tiles) or "wms" (live render, no tile cache). A group keeps the type it was created with.
+    seed: "now" seeds before returning (the COG's footprint and the members touching it, see seed_affected); "defer" skips
+    it and reports the footprint in m["seed_needed"] so a batch can seed once at the end with seed_affected().
     Returns a metrics dict."""
     if service not in SERVICE_TYPES:
         raise ValueError(f"service must be one of {SERVICE_TYPES}")
+    if seed not in ("now", "defer"):
+        raise ValueError("seed must be 'now' or 'defer'")
     L = f"{ws}:{group}"
     m = {"tile": tile, "steps": {}, "service": service}
     T = time.time()
@@ -240,15 +300,22 @@ def add_cog(env, ws, group, tile, blob_path, template=TEMPLATE_STORE, progress=N
             raise RuntimeError(f"tile layer config failed {c} {str(r)[:200]}")
         done("tile_config")
 
-        # 4. truncate the new footprint (all zooms), 5. seed what is missing there (z0-15)
+        # 4. truncate the new footprint (all zooms): live-rendered tiles there are stale. It also removes tiles along the seams
+        #    of the neighbouring COGs, which step 5 puts back.
         start("truncate")
         seed_request(env, L, "truncate", fp, TRUNCATE_ZOOM[0], TRUNCATE_ZOOM[1], threads=1)
         wait_seed_idle(env, L)
         done("truncate")
-        start("seed")
-        seed_request(env, L, "seed", fp, SEED_ZOOM[0], SEED_ZOOM[1], threads=SEED_THREADS.get(env, 2))
-        m["tiles_job_total"] = wait_seed_idle(env, L)
-        done("seed", f"{m['tiles_job_total']} tiles")
+        # 5. seed what is missing: this footprint and the members that touch it
+        m["seed_needed"] = fp
+        if seed == "defer":
+            if progress:
+                progress("seed", "skipped", None, "deferred: the batch seeds once at the end")
+        else:
+            start("seed")
+            m["tiles_job_total"], n_boxes = seed_affected(env, ws, group, [fp])
+            m["seed_needed"] = None
+            done("seed", f"{m['tiles_job_total']} tiles ({n_boxes} footprint{'s' if n_boxes != 1 else ''})")
 
     # 6. only the group may be tiled/advertised
     start("reconcile")

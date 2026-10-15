@@ -12,13 +12,15 @@ Status: **validated on dev** (54-COG sequential test, 0 failures). Not deployed.
 
 ## Update workflow (per COG, run any time, one at a time) — `add_cog.py`
 1. Publish the COG as a layer (hidden). 2. Add it to the group; set group bounds = union(existing, footprint) in EPSG:3857.
-3. Widen the tile layer extent. 4. **Truncate** the COG's bounding box (zoom 0-24). 5. **Seed** the same box (zoom 0-15, PNG).
+3. Widen the tile layer extent. 4. **Truncate** the COG's bounding box (zoom 0-24). 5. **Seed** (zoom 0-15, PNG) the COG's footprint **and the
+footprints of the members that touch it** (see rule 10). A batch in the app defers seeding and does it **once after the last COG**
+(`seed_affected`), shown on the page as "Seed service tiles".
 6. Remove stray per-layer tile layers. The function is stateless (reads GeoServer), idempotent (skips existing members), resumable.
 
 ## Run the GUI locally (dev GeoServer)
 ```
 python run_local.py        # http://localhost:8000  (needs `az login`; GeoServer password comes from Key Vault pi-geoserver/geoadmin)
-python -m pytest -q        # 117 unit tests against a fake GeoServer; no network, no side effects
+python -m pytest -q        # 127 unit tests against a fake GeoServer; no network, no side effects
 ```
 `run_local.py` sets `WMTS_LOCAL=1` (a fake signed-in user; without it the app returns 401 unless Azure sign-in headers are present)
 and an empty `AZURE_EXTENSION_DIR` (works around the corrupted costmanagement CLI extension that breaks `az` on this machine).
@@ -97,6 +99,15 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 7. Truncate range != seed range: truncate every zoom, because on-demand z16+ tiles go stale at seams.
 8. GeoServer re-creates per-layer tile layers in the background; sweep them after every add.
 9. `az storage blob list` silently caps at 5,000 unless `--num-results` is raised. Tiles are keyed in blob by the group's internal ID.
+10. **Seed each COG's footprint plus its neighbours, never the group's bounding rectangle.** Dev experiments 2026-10-15 (throwaway services, tiles counted
+    in the blob cache): adding a member to the group does NOT empty its cache (653 -> 653 tiles; also with the tile layer disabled, with a nested
+    group, and with a bounds-only change). But a COG's bounded truncate also removes tiles along the seams of the COGs next to it, and seeding only
+    the new COG's own box does not bring them back: 4 adjoining COGs seeded one at a time were missing 144 tiles inside the earlier footprints
+    (footprints 1-3 missing 80/16/48). Adding all four first (every truncate) and then seeding each footprint once left 0 missing. Seeding the
+    group's whole bounding rectangle was tried and rejected: 2,252 -> 6,458 tiles, and a sample of the extra tiles was fully transparent (empty
+    space between COGs). Verify with `live_tests::test_batch_and_single_add_leave_every_footprint_fully_seeded` (re-seeding any footprint finds nothing).
+    GWC lists a seed task only once it is scheduled, so `wait_seed_idle` waits for the task to appear before treating an empty list as finished.
+    (An earlier note here claimed GeoServer wipes the whole cache when a member is added; that was not reproduced and has been removed.)
 
 ## Open items
 - Fixed 2026-10-13 (found by a user's 10-COG batch that stopped after 1 while reporting 'Done'): a history-save failure (deleted `data/` folder) aborted the whole batch, and COGs that never ran were reported as done. Now history is best-effort (folder recreated on save, failures noted but never fatal) and any COG that did not run is marked FAILED ('Not run') so the job can never claim success it did not have. Regression tests reproduce both.
