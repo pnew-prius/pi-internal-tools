@@ -4,3 +4,7 @@ data/
 *.pyc
 cleanup_inventory.json
 tilecount_*.json
+.build-venv/
+build/
+dist/
+*.spec

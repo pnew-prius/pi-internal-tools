@@ -1,0 +1,36 @@
+WMTS / WMS SERVICE BUILDER - install and use
+=============================================
+
+WHAT IT IS
+A small program that runs on your own computer and opens a web page (http://localhost:8000). On that page you create map
+services on the GeoServer from COG files, or add COGs to a service, and copy the service URLs. Nothing is visible to
+other computers: it only listens on your machine.
+
+WHAT YOU NEED (once per computer)
+1. Windows 10 or 11, 64-bit.
+2. The Azure CLI:  https://learn.microsoft.com/cli/azure/install-azure-cli-windows
+3. Sign in to Azure with your Prius Intelli account, in a normal command window:     az login
+   Your account must be allowed to read secrets in the Key Vault "pi-geoserver" (that is where the GeoServer password
+   lives; it is never stored on this computer or in this program). If the page says it cannot read the credential,
+   ask for access to that Key Vault.
+
+INSTALL
+Unzip this folder anywhere you can write to (for example C:\Tools\wmts-builder or your Documents folder). Do not put it under
+C:\Program Files. There is nothing else to install.
+
+RUN
+Double-click  wmts-builder.exe . A black window opens and your browser opens the page. Leave the black window open while
+you work; close it to stop the program. Job history is kept in the "data" folder next to wmts-builder.exe.
+
+Windows may show "Windows protected your PC" the first time because the program is not signed. Choose More info, then Run anyway.
+
+DEV AND PROD
+It starts with the DEV GeoServer only. To also offer PROD (customer-facing) to your own user, start it with:
+    wmts-builder.exe --prod
+Every PROD change still needs the confirmation box, only services created by this program can be changed on PROD, and a
+removal needs the service name typed in. If you do not need PROD, do not use --prod.
+
+IF SOMETHING GOES WRONG
+- "Could not read the GeoServer credential": run   az login   again, or ask for Key Vault access.
+- The page does not open: browse to the address shown in the black window.
+- Port in use: the program picks the next free port and shows it in the black window.
