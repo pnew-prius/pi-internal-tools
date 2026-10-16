@@ -25,10 +25,10 @@ you work; close it to stop the program. Job history is kept in the "data" folder
 Windows may show "Windows protected your PC" the first time because the program is not signed. Choose More info, then Run anyway.
 
 DEV AND PROD
-It starts with the DEV GeoServer only. To also offer PROD (customer-facing) to your own user, start it with:
-    wmts-builder.exe --prod
-Every PROD change still needs the confirmation box, only services created by this program can be changed on PROD, and a
-removal needs the service name typed in. If you do not need PROD, do not use --prod.
+The Environment dropdown offers DEV and PROD (customer-facing) to the Azure user you signed in with. PROD is not offered if no
+Azure sign-in is found. Every PROD change still needs the confirmation box, only services created by this program can be changed
+on PROD, and a removal needs the service name typed in. To hide PROD, start the program with:
+    wmts-builder.exe --dev-only
 
 IF SOMETHING GOES WRONG
 - "Could not read the GeoServer credential": run   az login   again, or ask for Key Vault access.
