@@ -65,6 +65,7 @@
   <div><div class="brand">PRIUS INTELLI</div><h1>Map Service Builder <span style="font-weight:400;font-size:13px;color:#bfe3d6">WMTS / WMS</span></h1></div>
   <div class="who">Signed in as <strong id="user">{{ user }}</strong></div>
 </header>
+{% if user == "local-dev" %}<div id="nosignin" role="alert" style="background:#fdebd6;color:#7a2a12;padding:10px 16px;border-bottom:2px solid #c8501f"><b>No Azure sign-in was found on this computer.</b> The GeoServer password and PROD both depend on it, so this page cannot work yet and PROD is hidden. Install the Azure CLI, run <code>az login</code> in a command window, then close and restart this program.</div>{% endif %}
 <div id="prodbar" role="alert" style="display:none">PRODUCTION &mdash; changes here affect the live image server that customers use. Double-check the workspace, service and COG list.</div>
 <main>
   <section aria-labelledby="addh">

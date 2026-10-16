@@ -195,6 +195,13 @@ def test_index_page_renders_with_user(client):
     assert r.status_code == 200 and b"someone@priusintelli.com" in r.data and b"Map Service Builder" in r.data and b"<textarea" in r.data
 
 
+def test_page_says_so_when_there_is_no_azure_sign_in(client):
+    c, *_ = client
+    r = c.get("/", headers={"X-MS-CLIENT-PRINCIPAL-NAME": "local-dev"})      # what a machine with no `az login` shows
+    assert b"No Azure sign-in was found" in r.data and b"az login" in r.data
+    assert b"No Azure sign-in was found" not in c.get("/", headers=H).data
+
+
 def test_wms_job_via_api_runs_without_seeding(client):
     c, mgr, fake = client
     j = wait(c, post(c, dict(BODY, service_type="wms")).get_json()["job"]["id"])
