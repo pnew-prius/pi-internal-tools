@@ -137,7 +137,7 @@ Needs: Python 3 (`pip install -r requirements.txt`) and `az login`. No `curl.exe
 
 ## Package it for another Windows machine
 `pwsh -File build_exe.ps1` builds `dist\wmts-builder-<commit>.zip` (about 25 MB; a throwaway `.build-venv` is used, nothing is installed system-wide).
-Unzip it anywhere writable on the other machine and run `wmts-builder.exe` (add `--prod` to also offer PROD to your own user). The other machine
+Unzip it anywhere writable on the other machine and run `wmts-builder.exe` (it offers DEV and PROD to your own signed-in user; `--dev-only` hides PROD). The other machine
 needs the Azure CLI and `az login` with access to Key Vault `pi-geoserver` (the GeoServer password is read from there, never stored). `INSTALL.txt`
 inside the zip says the same in plain terms. Verified 2026-10-15 from a fresh folder: page, Key Vault credential, dev workspaces, one real add + removal.
 Not signed, so Windows SmartScreen shows a one-time warning. `exe_main.py` is the entry point; history is kept in `data\` next to the exe.
