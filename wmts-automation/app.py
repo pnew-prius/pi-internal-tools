@@ -149,8 +149,9 @@ def create_app(manager=None):
             st = group_state(env, ws, group)
             stype = group_service_type(env, ws, group, st[0]) if st else None
         host = PUBLIC_HOSTS[env]
-        urls = {"wmts": f"https://{host}/{ws}/gwc/service/wmts?REQUEST=GetCapabilities",
-                "wms": f"https://{host}/{ws}/ows?service=WMS&request=GetCapabilities&version=1.3.0"}
+        # scoped to the service (workspace/layer group), so a client sees only this layer group and not every service in the workspace
+        urls = {"wmts": f"https://{host}/{ws}/{group}/gwc/service/wmts?REQUEST=GetCapabilities",
+                "wms": f"https://{host}/{ws}/{group}/ows?service=WMS&request=GetCapabilities&version=1.3.0"}
         tile = (f"https://{host}/gwc/service/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&LAYER={ws}:{group}&STYLE="
                 "&TILEMATRIXSET=EPSG:3857&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png")
         return jsonify(exists=st is not None, members=len(st[1]) if st else 0, service_type=stype, layer=f"{ws}:{group}",

@@ -171,6 +171,23 @@ def test_two_services_built_at_the_same_time_in_one_workspace(ws):
     assert sorted(tile_layers(ws)) == [f"{ws}:A", f"{ws}:B"]             # neither sweep deleted the other service's tiles
 
 
+def test_service_urls_show_only_their_own_layer_group(ws, tmp_path):
+    """The URLs the app hands out are scoped to the layer group: in a workspace with two services, each one's WMTS and WMS
+    capabilities list only that service, while the workspace-level URL lists both."""
+    add_cog("dev", ws, "A", "ww26-01", blob(1))
+    add_cog("dev", ws, "B", "ww26-02", blob(2))
+    c = app_mod.create_app(JobManager(JsonlStore(str(tmp_path / "h.jsonl")))).test_client()
+    H = {"X-MS-CLIENT-PRINCIPAL-NAME": "live@test"}
+    assert sorted(caps_layers(ws, "wmts")) == ["A", "B"]                      # workspace-level: both services
+    for g, other in (("A", "B"), ("B", "A")):
+        u = c.get(f"/api/service?env=dev&workspace={ws}&group={g}", headers=H).get_json()
+        assert f"/{ws}/{g}/gwc/service/wmts" in u["wmts_url"] and f"/{ws}/{g}/ows" in u["wms_url"]
+        wmts = requests.get(u["wmts_url"], headers=UA, timeout=90).text
+        wms = requests.get(u["wms_url"], headers=UA, timeout=90).text
+        assert re.findall(r"<ows:Identifier>([^<]+)</ows:Identifier>", wmts)[:1] == [g] and f">{other}<" not in wmts
+        assert re.findall(r"<Layer[^>]*>\s*<Name>([^<]+)</Name>", wms) == [g]
+
+
 def test_two_app_instances_adding_to_the_same_service_do_not_lose_a_cog(ws):
     """Simulates two App Service instances (no shared in-memory lock) adding different COGs to one new group at once."""
     errs = []

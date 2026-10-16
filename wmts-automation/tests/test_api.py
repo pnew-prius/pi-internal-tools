@@ -186,7 +186,7 @@ def test_service_endpoint_reports_members_and_capabilities_url(client):
     c, *_ = client
     wait(c, post(c, BODY).get_json()["job"]["id"])
     s = c.get("/api/service?workspace=TESTWS&group=Svc", headers=H).get_json()
-    assert s["exists"] and s["members"] == 1 and s["capabilities_url"].endswith("/TESTWS/gwc/service/wmts?REQUEST=GetCapabilities")
+    assert s["exists"] and s["members"] == 1 and s["capabilities_url"].endswith("/TESTWS/Svc/gwc/service/wmts?REQUEST=GetCapabilities")
 
 
 def test_index_page_renders_with_user(client):
@@ -218,8 +218,8 @@ def test_service_urls_for_a_wmts_service(client):
     c, *_ = client
     wait(c, post(c, BODY).get_json()["job"]["id"])
     s = c.get("/api/service?workspace=TESTWS&group=Svc", headers=H).get_json()
-    assert s["service_type"] == "wmts" and s["wms_url"].endswith("/TESTWS/ows?service=WMS&request=GetCapabilities&version=1.3.0")
-    assert s["wmts_url"].endswith("/TESTWS/gwc/service/wmts?REQUEST=GetCapabilities")
+    assert s["service_type"] == "wmts" and s["wms_url"].endswith("/TESTWS/Svc/ows?service=WMS&request=GetCapabilities&version=1.3.0")
+    assert s["wmts_url"].endswith("/TESTWS/Svc/gwc/service/wmts?REQUEST=GetCapabilities")   # scoped to the layer group
     assert "LAYER=TESTWS:Svc" in s["tile_url_template"] and "{z}" in s["tile_url_template"] and "{x}" in s["tile_url_template"]
 
 
@@ -227,7 +227,7 @@ def test_service_urls_for_a_wms_service_have_no_wmts(client):
     c, *_ = client
     wait(c, post(c, dict(BODY, service_type="wms")).get_json()["job"]["id"])
     s = c.get("/api/service?workspace=TESTWS&group=Svc", headers=H).get_json()
-    assert s["service_type"] == "wms" and s["wmts_url"] is None and s["tile_url_template"] is None and "ows?service=WMS" in s["wms_url"]
+    assert s["service_type"] == "wms" and s["wmts_url"] is None and s["tile_url_template"] is None and "/TESTWS/Svc/ows?service=WMS" in s["wms_url"]
 
 
 def test_page_has_service_type_and_copyable_url_support(client):
