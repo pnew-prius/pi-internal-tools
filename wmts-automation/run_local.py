@@ -17,7 +17,7 @@ if not os.environ.get("WMTS_DEV_USER"):
     except Exception:
         os.environ["WMTS_DEV_USER"] = "local-dev"
 if "--prod" in sys.argv:
-    # opt-in: offer PROD in the Environment dropdown to YOUR signed-in user only. Every prod change still needs the confirmation box.
+    # opt-in: offer PROD in the Environment dropdown to YOUR signed-in user only. Prod is marked with a red PRODUCTION bar; removals need the name typed.
     os.environ["WMTS_ENVS"] = "dev,prod"
     os.environ["WMTS_PROD_USERS"] = os.environ["WMTS_DEV_USER"]
 os.chdir(here)

@@ -191,7 +191,7 @@ def create_app(manager=None):
             return jsonify(error=f"{len(errors)} problem(s) in the COG list; nothing was started.", problems=errors), 400
         if env == "prod":
             if body.get("confirm_prod") is not True:
-                raise ValidationError("Tick the box to confirm you are changing PRODUCTION. Nothing was started.")
+                raise ValidationError("This request does not say it is meant for PRODUCTION (confirm_prod). Nothing was started.")
             if len(items) > prod_max_batch:
                 raise ValidationError(f"At most {prod_max_batch} COGs per run on PROD ({len(items)} pasted); seeding competes with live traffic.")
             with prod_session(env):

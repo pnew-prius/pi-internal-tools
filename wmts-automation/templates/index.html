@@ -76,14 +76,16 @@
         <select id="env">{% for e in envs %}<option value="{{ e }}">{{ e }}</option>{% endfor %}</select>
       </div>
       <div>
-        <label for="workspace">Workspace</label>
-        <input type="text" id="workspace" list="wslist" required placeholder="e.g. WW26">
+        <label for="wspick">Workspace</label>
+        <select id="wspick"><option value="">Loading existing workspaces...</option></select>
+        <input type="text" id="workspace" list="wslist" required placeholder="...or type a new name, e.g. WW26" aria-label="Workspace name (type a new one)" style="margin-top:6px">
         <datalist id="wslist"></datalist>
-        <p class="hint">One per customer project/season.</p>
+        <p class="hint" id="wshint">One per customer project/season.</p>
       </div>
       <div>
-        <label for="group">Service (layer group)</label>
-        <input type="text" id="group" list="grlist" required placeholder="e.g. WW26-All">
+        <label for="grpick">Service (layer group)</label>
+        <select id="grpick"><option value="">Pick a workspace first</option></select>
+        <input type="text" id="group" list="grlist" required placeholder="...or type a new name, e.g. WW26-All" aria-label="Service name (type a new one)" style="margin-top:6px">
         <datalist id="grlist"></datalist>
         <p class="hint" id="svcinfo">Pick an existing service or type a new name.</p>
       </div>
@@ -101,9 +103,11 @@
       <div class="full">
         <div class="row"><input type="checkbox" id="mkws"><label for="mkws" style="margin:0;font-weight:400">Create the workspace if it doesn't exist</label></div>
         <div class="row"><input type="checkbox" id="refresh"><label for="refresh" style="margin:0;font-weight:400">Refresh COGs already in the service (re-seed them; otherwise they are skipped)</label></div>
-        <div class="row" id="prodrow" style="display:none"><input type="checkbox" id="prodok"><label for="prodok" style="margin:0;font-weight:700;color:#C1502E">I understand this changes PRODUCTION</label></div>
-        <div class="row" id="syncsel" style="display:none"><label for="syncmode" style="margin:0;font-weight:600">After the run, update customer-facing GeoServer:</label>
-          <select id="syncmode" style="width:auto"><option value="reload">Reload in place (no downtime)</option><option value="restart">Rolling restart (brief outage if one instance)</option><option value="none">Skip - I will do it myself</option></select></div>
+        <div id="syncsel" style="display:none">
+          <div class="row"><label for="syncmode" style="margin:0;font-weight:600">When the run finishes, make customers see the change:</label>
+            <select id="syncmode" style="width:auto"><option value="reload">Refresh the customer servers (recommended - nobody is interrupted)</option><option value="restart">Restart the customer servers, one at a time (slower)</option><option value="none">Do nothing - I will do it myself</option></select></div>
+          <p class="hint"><b>Why this exists:</b> the servers customers use remember their settings and do not notice a new or changed service until they are told to. <b>Refresh</b> tells each server to re-read its settings: it takes a couple of minutes and nobody is disconnected. <b>Restart</b> switches each server off and on again, one at a time, for the rare case a refresh is not enough; a server is unavailable while it restarts, so if only one server is running customers lose the service for a short while. <b>Do nothing</b> skips it, and customers will not see the change until someone refreshes or restarts the servers.</p>
+        </div>
         <div class="row"><button id="go" type="submit" disabled>Add COGs</button><span class="hint" id="note"></span></div>
         <div class="error" id="err" role="alert"></div>
       </div>
@@ -114,8 +118,10 @@
     <h2 id="remh">Remove a service</h2>
     <p class="hint" style="margin-top:0">Clears its tile cache first, then deletes the service and its layers (layers another service uses are kept). Only services built by this app can be removed. This cannot be undone.</p>
     <form id="rmform" class="grid" autocomplete="off">
-      <div><label for="rmws">Workspace</label><input type="text" id="rmws" list="wslist" required></div>
-      <div><label for="rmgroup">Service (layer group)</label><input type="text" id="rmgroup" required></div>
+      <div><label for="rmwspick">Workspace</label><select id="rmwspick"><option value="">Loading existing workspaces...</option></select>
+        <input type="text" id="rmws" list="wslist" required aria-label="Workspace name" style="margin-top:6px"></div>
+      <div><label for="rmgrpick">Service (layer group)</label><select id="rmgrpick"><option value="">Pick a workspace first</option></select>
+        <input type="text" id="rmgroup" required aria-label="Service name" style="margin-top:6px"></div>
       <div><label for="rmconfirm" id="rmconfirmlabel">Type the service name to confirm</label><input type="text" id="rmconfirm" required></div>
       <div class="full"><div class="row"><button id="rmgo" type="submit" disabled style="background:var(--rust)">Remove service</button><span class="hint" id="rmnote"></span></div>
       <div class="error" id="rmerr" role="alert"></div></div>
@@ -155,11 +161,34 @@ async function api(path, opts) {
 function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
 function fillList(id, items) { const dl = $(id); dl.replaceChildren(...items.map(v => { const o = document.createElement("option"); o.value = v; return o; })); }
 
-async function loadWorkspaces() { try { fillList("wslist", (await api("/api/workspaces?env=" + $("env").value)).workspaces); } catch (e) {} }
-async function loadGroups() {
-  const ws = $("workspace").value.trim(); if (!ws) return;
-  try { fillList("grlist", (await api("/api/groups?env=" + $("env").value + "&workspace=" + encodeURIComponent(ws))).groups); } catch (e) { fillList("grlist", []); }
+function fillPick(id, items, emptyLabel) {
+  const sel = $(id), first = el("option", emptyLabel); first.value = "";
+  sel.replaceChildren(first, ...items.map(v => { const o = el("option", v); o.value = v; return o; }));
 }
+async function loadWorkspaces() {
+  $("wshint").textContent = "Loading existing workspaces..."; $("wshint").className = "hint";
+  try {
+    const names = (await api("/api/workspaces?env=" + $("env").value)).workspaces;
+    fillList("wslist", names);
+    const label = "Pick an existing workspace (" + names.length + ")...";
+    fillPick("wspick", names, label); fillPick("rmwspick", names, label);
+    $("wshint").textContent = "One per customer project/season. Pick one from the list, or type a new name below it.";
+  } catch (e) {
+    fillList("wslist", []); fillPick("wspick", [], "Could not load the workspace list"); fillPick("rmwspick", [], "Could not load the workspace list");
+    $("wshint").textContent = "Could not load the workspace list: " + e.message; $("wshint").className = "hint prob";
+  }
+}
+async function loadGroupsFor(wsId, pickId, listId) {
+  const ws = $(wsId).value.trim();
+  if (!ws) { fillPick(pickId, [], "Pick a workspace first"); if (listId) fillList(listId, []); return; }
+  try {
+    const g = (await api("/api/groups?env=" + $("env").value + "&workspace=" + encodeURIComponent(ws))).groups;
+    if (listId) fillList(listId, g);
+    fillPick(pickId, g, g.length ? "Pick an existing service (" + g.length + ")..." : "No services in this workspace yet");
+  } catch (e) { if (listId) fillList(listId, []); fillPick(pickId, [], "Could not load services"); }
+}
+const loadGroups = () => loadGroupsFor("workspace", "grpick", "grlist");
+const loadRmGroups = () => loadGroupsFor("rmws", "rmgrpick", null);
 async function showService() {
   const ws = $("workspace").value.trim(), g = $("group").value.trim(); if (!ws || !g) return;
   try {
@@ -294,7 +323,7 @@ async function loadHistory() {
 }
 let vtimer = null, boxOk = false, running = false;
 function isProd() { return $("env").value === "prod"; }
-function syncButton(label) { $("go").textContent = label; $("go").disabled = running || !boxOk || (isProd() && !$("prodok").checked); }
+function syncButton(label) { $("go").textContent = label; $("go").disabled = running || !boxOk; }
 async function validateBox() {
   const text = $("blob").value;
   if (!text.trim()) { $("preview").replaceChildren(); boxOk = false; syncButton("Add COGs"); return; }
@@ -322,7 +351,7 @@ $("form").addEventListener("submit", async (ev) => {
   try {
     const { job } = await api("/api/jobs", { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ env: $("env").value, workspace: $("workspace").value.trim(), group: $("group").value.trim(),
-                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value, confirm_prod: isProd() && $("prodok").checked, sync_mode: isProd() ? $("syncmode").value : "reload" }) });
+                             blob_text: $("blob").value, create_workspace: $("mkws").checked, refresh: $("refresh").checked, service_type: $("stype").value, confirm_prod: isProd(), sync_mode: isProd() ? $("syncmode").value : "reload" }) });
     $("progress").style.display = "block"; $("jobtitle").textContent = "- " + job.counts.total + " COG(s) into " + job.workspace + ":" + job.group;
     renderJob(job); timer = setInterval(() => poll(job.id), 1000);
   } catch (e) { $("err").textContent = e.message; $("err").style.display = "block"; running = false; syncButton($("go").textContent); }
@@ -351,17 +380,19 @@ function applyEnv() {
   const prod = isProd();
   document.body.classList.toggle("prod", prod);
   $("prodbar").style.display = prod ? "block" : "none";
-  $("prodrow").style.display = prod ? "flex" : "none";
-  $("syncsel").style.display = prod ? "flex" : "none";
-  if (!prod) $("prodok").checked = false;
+  $("syncsel").style.display = prod ? "block" : "none";
   $("rmconfirmlabel").textContent = prod ? "Type workspace:service to confirm (PRODUCTION)" : "Type the service name to confirm";
   syncButton($("go").textContent); syncRemove();
 }
-$("prodok").addEventListener("change", () => syncButton($("go").textContent));
 $("env").addEventListener("change", () => { applyEnv(); loadWorkspaces(); $("svcinfo").textContent = "Pick an existing service or type a new name."; });
 applyEnv();
 $("workspace").addEventListener("change", () => { loadGroups(); showService(); });
 $("group").addEventListener("change", showService);
+$("wspick").addEventListener("change", () => { if (!$("wspick").value) return; $("workspace").value = $("wspick").value; $("group").value = ""; loadGroups(); showService(); });
+$("grpick").addEventListener("change", () => { if (!$("grpick").value) return; $("group").value = $("grpick").value; showService(); });
+$("rmws").addEventListener("change", () => { loadRmGroups(); });
+$("rmwspick").addEventListener("change", () => { if (!$("rmwspick").value) return; $("rmws").value = $("rmwspick").value; $("rmgroup").value = ""; $("rmws").dispatchEvent(new Event("input")); loadRmGroups(); });
+$("rmgrpick").addEventListener("change", () => { if (!$("rmgrpick").value) return; $("rmgroup").value = $("rmgrpick").value; $("rmgroup").dispatchEvent(new Event("input")); });
 loadWorkspaces(); loadHistory();
 </script>
 </body>

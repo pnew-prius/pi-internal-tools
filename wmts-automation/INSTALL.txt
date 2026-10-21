@@ -26,8 +26,10 @@ Windows may show "Windows protected your PC" the first time because the program 
 
 DEV AND PROD
 The Environment dropdown offers DEV and PROD (customer-facing) to the Azure user you signed in with. PROD is not offered if no
-Azure sign-in is found. Every PROD change still needs the confirmation box, only services created by this program can be changed
-on PROD, and a removal needs the service name typed in. To hide PROD, start the program with:
+Azure sign-in is found. PROD is marked with a red PRODUCTION bar, only services created by this program can be changed
+on PROD, and a removal needs the service name typed in. On a PROD run, the page asks how customers should see the change: refresh
+their servers (recommended), restart them one at a time, or do nothing. That step needs your Azure account to have rights on the
+customer scale set; if it does not, the run still succeeds and the page says the customer servers were not updated. To hide PROD, start the program with:
     wmts-builder.exe --dev-only
 
 IF SOMETHING GOES WRONG

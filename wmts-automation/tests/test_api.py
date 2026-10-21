@@ -195,6 +195,15 @@ def test_index_page_renders_with_user(client):
     assert r.status_code == 200 and b"someone@priusintelli.com" in r.data and b"Map Service Builder" in r.data and b"<textarea" in r.data
 
 
+def test_page_has_real_dropdowns_for_workspace_and_service_and_no_prod_checkbox(client):
+    c, *_ = client
+    html = c.get("/", headers=H).get_data(as_text=True)
+    for sid in ("wspick", "grpick", "rmwspick", "rmgrpick"):
+        assert f'<select id="{sid}"' in html                       # visible dropdowns, not just a hidden suggestion list
+    assert "prodok" not in html and "I understand" not in html     # the PROD checkbox is gone
+    assert "Refresh the customer servers" in html and "Restart the customer servers" in html and "Do nothing" in html
+
+
 def test_page_says_so_when_there_is_no_azure_sign_in(client):
     c, *_ = client
     r = c.get("/", headers={"X-MS-CLIENT-PRINCIPAL-NAME": "local-dev"})      # what a machine with no `az login` shows

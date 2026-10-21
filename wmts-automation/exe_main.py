@@ -2,7 +2,7 @@
 
 Start:      wmts-builder.exe            (opens http://localhost:8000 in your browser; close the window to stop it)
             DEV and PROD are both offered in the Environment dropdown, to YOUR signed-in Azure user only. Every PROD change still
-            needs the confirmation box, only services this program created can be changed on PROD, and a removal needs the name typed.
+            is marked with a red PRODUCTION bar, only services this program created can be changed on PROD, and a removal needs the name typed.
 Dev only:   wmts-builder.exe --dev-only (hides PROD)
 Credential: your `az login` -> Key Vault `pi-geoserver`/`geoadmin` (or set GEOSERVER_PASS to skip Key Vault).
 """
@@ -24,6 +24,8 @@ ext = os.path.join(tempfile.gettempdir(), "azext_empty")
 os.makedirs(ext, exist_ok=True)
 os.environ.setdefault("AZURE_EXTENSION_DIR", ext)
 os.environ["WMTS_LOCAL"] = "1"   # local single-user mode: the signed-in `az` user is the user of record
+# the production customer-facing scale set that "refresh/restart the customer servers" acts on (needs your Azure rights on it; override with the same variable)
+os.environ.setdefault("WMTS_PROD_SYNC_TARGET", "vmss:RG_GEOSERVER_SOUTHCENTRALUS/geoserver-vmss")
 
 
 def az_user():
