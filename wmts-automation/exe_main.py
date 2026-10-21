@@ -1,8 +1,8 @@
 """Entry point for the packaged Windows app (PyInstaller). Runs the same web app as run_local.py, on this computer only.
 
 Start:      wmts-builder.exe            (opens http://localhost:8000 in your browser; close the window to stop it)
-            DEV and PROD are both offered in the Environment dropdown, to YOUR signed-in Azure user only. Every PROD change still
-            is marked with a red PRODUCTION bar, only services this program created can be changed on PROD, and a removal needs the name typed.
+            DEV and PROD are both offered in the Environment dropdown, to YOUR signed-in Azure user only. PROD is
+            marked with a red PRODUCTION bar, only services this program created can be changed on PROD, and a removal needs the name typed.
 Dev only:   wmts-builder.exe --dev-only (hides PROD)
 Credential: your `az login` -> Key Vault `pi-geoserver`/`geoadmin` (or set GEOSERVER_PASS to skip Key Vault).
 """
