@@ -34,7 +34,7 @@ are refused (shared tile cache). Environments are enabled by `WMTS_ENVS` (defaul
 ## PROD in the GUI (fail-closed)
 The Environment dropdown offers **prod** only when ALL of these hold: `WMTS_ENVS` includes `prod` AND the signed-in user is in `WMTS_PROD_USERS`
 (comma-separated emails) or in the Entra group `WMTS_PROD_GROUP_ID` (read from the App Service sign-in claims). If prod is requested but nobody is
-authorized, it is silently dropped. Locally: `python run_local.py --prod` offers prod to your own user only.
+authorized, it is silently dropped. Locally: `python run_local.py` offers dev and prod to your own signed-in user only (`--dev-only` hides prod).
 Rules on prod: every add needs the "I understand this changes PRODUCTION" box (`confirm_prod`); removal needs `workspace:service` typed; at most
 `WMTS_PROD_MAX_BATCH` (25) COGs per run; the app only modifies services IT created (marker in group metadata; hand-built services are refused);
 seeding uses 2 threads (dev 4) so live traffic is not starved. Prod access in code is a thread-local session (`gs_client.prod_access(write=...)`):
