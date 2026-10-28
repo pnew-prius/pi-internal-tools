@@ -123,11 +123,27 @@ def create_app(manager=None):
     def me():
         return jsonify(user=current_user(), envs=allowed_envs(), prod_max_batch=prod_max_batch)
 
+    def geoserver_unreachable(env, c, r):
+        """A list that could not be read is an error, never an empty list: say what is wrong so the page can show it."""
+        text = str(r)
+        if "CERTIFICATE_VERIFY_FAILED" in text or "certificate has expired" in text:
+            msg = (f"The {env} GeoServer's HTTPS certificate is expired or not trusted, so this app refuses to talk to it. "
+                   "The certificate must be renewed on the server.")
+        elif c == 0:
+            msg = f"Could not connect to the {env} GeoServer ({text[:160]})."
+        elif c in (401, 403):
+            msg = f"The {env} GeoServer rejected the credential (HTTP {c}). Check the Key Vault secret or your access."
+        else:
+            msg = f"The {env} GeoServer returned HTTP {c}."
+        return jsonify(error=msg), 502
+
     @app.get("/api/workspaces")
     def workspaces():
         env = env_or_400()
         with prod_session(env):
             c, r = call(env, "GET", "/rest/workspaces.json")
+        if c != 200:
+            return geoserver_unreachable(env, c, r)
         ws = r.get("workspaces") if isinstance(r, dict) else None
         return jsonify(workspaces=sorted(w["name"] for w in ws["workspace"]) if isinstance(ws, dict) else [])
 
@@ -137,6 +153,8 @@ def create_app(manager=None):
         ws = check_name("Workspace", request.args.get("workspace"))
         with prod_session(env):
             c, r = call(env, "GET", f"/rest/workspaces/{ws}/layergroups.json")
+        if c != 404 and c != 200:   # 404 = a workspace that does not exist yet (the user is typing a new name): an empty list
+            return geoserver_unreachable(env, c, r)
         lg = r.get("layerGroups") if isinstance(r, dict) else None
         return jsonify(groups=sorted(g["name"] for g in lg["layerGroup"]) if isinstance(lg, dict) else [])
 

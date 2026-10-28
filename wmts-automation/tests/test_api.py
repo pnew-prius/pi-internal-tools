@@ -204,6 +204,23 @@ def test_page_has_real_dropdowns_for_workspace_and_service_and_no_prod_checkbox(
     assert "Refresh the customer servers" in html and "Restart the customer servers" in html and "Do nothing" in html
 
 
+def test_unreachable_geoserver_is_an_error_not_an_empty_list(client, monkeypatch):
+    c, *_ = client
+    monkeypatch.setattr("app.call", lambda *a, **k: (0, "SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate has expired"))
+    r = c.get("/api/workspaces?env=dev", headers=H)
+    assert r.status_code == 502 and "certificate" in r.get_json()["error"] and "workspaces" not in r.get_json()
+    assert c.get("/api/groups?env=dev&workspace=ANY", headers=H).status_code == 502
+    monkeypatch.setattr("app.call", lambda *a, **k: (401, "unauthorized"))
+    assert "credential" in c.get("/api/workspaces?env=dev", headers=H).get_json()["error"]
+
+
+def test_a_workspace_that_does_not_exist_yet_has_no_groups_not_an_error(client, monkeypatch):
+    c, *_ = client
+    monkeypatch.setattr("app.call", lambda *a, **k: (404, "no such workspace"))
+    r = c.get("/api/groups?env=dev&workspace=NEWWS", headers=H)
+    assert r.status_code == 200 and r.get_json()["groups"] == []
+
+
 def test_page_says_so_when_there_is_no_azure_sign_in(client):
     c, *_ = client
     r = c.get("/", headers={"X-MS-CLIENT-PRINCIPAL-NAME": "local-dev"})      # what a machine with no `az login` shows
